@@ -191,7 +191,12 @@ class SetupTests(unittest.TestCase):
                 module, classname = name.rsplit(".", 1)
                 native = type(classname, (), {"__module__": module})()
                 with patch.object(store.sys, "platform", platform), patch("keyring.get_keyring", return_value=native):
-                    self.assertIs(store.backend(), native)
+                    if platform == "win32":
+                        from windows_credentials import WindowsCredentialStore
+                        with patch.object(WindowsCredentialStore, "native", return_value=self.backend):
+                            self.assertIs(store.backend(), self.backend)
+                    else:
+                        self.assertIs(store.backend(), native)
         self.patch.start()
 
     def test_status_does_not_read_vault_without_request(self):
