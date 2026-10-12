@@ -14,7 +14,7 @@ The private form and interactive setup command use `credential_store.py` and the
 | macOS | Keychain | Supported Python build and access to the user's keychain |
 | Linux | Secret Service or KWallet | Running, accessible service and its required session/libraries |
 
-The service namespace includes the account ID and a hash of the resolved account directory, so separate accounts/data roots do not overwrite each other. Use the same root and OS user on both days. Blank form fields preserve stored values. Replacing existing values requires selecting the replacement option. A partially failed multi-field save may have saved some credentials; inspect presence before retrying.
+The service namespace includes the account ID and a hash of the resolved account directory, so separate accounts/data roots do not overwrite each other. Use the same root and OS user on both days. Blank form fields preserve stored values. Save updates only fields the user filled in. The advanced terminal setup requires explicit replacement confirmation. A partially failed multi-field save may have saved some credentials; inspect presence before retrying.
 
 The helper refuses plaintext, null, unsupported, or arbitrary third-party backends. It may select an approved native backend from a keyring chain but never uses the chain's insecure fallbacks. Do not install `keyrings.alt` or create a plaintext `.env` as a workaround. Native storage protects credentials at rest; it does not isolate them from every process with the same OS-user privileges.
 
