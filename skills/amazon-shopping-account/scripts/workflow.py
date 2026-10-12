@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -31,8 +32,11 @@ def data_directory(platform=None, environ=None, home=None):
         base = Path(environ.get("LOCALAPPDATA") or home / "AppData/Local")
     elif platform == "darwin":
         base = home / "Library/Application Support"
+    elif platform == "linux":
+        configured = environ.get("XDG_DATA_HOME")
+        base = Path(configured) if configured and Path(configured).is_absolute() else home / ".local/share"
     else:
-        base = Path(environ.get("XDG_DATA_HOME") or home / ".local/share")
+        raise WorkflowError("Supported platforms are Windows, macOS, and Linux")
     return base / "AmazonShoppingSkill"
 
 
@@ -46,6 +50,14 @@ def chrome_candidates(platform=None, environ=None, home=None):
     if platform == "darwin":
         return [Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
                 home / "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
+    if platform == "linux":
+        names = ("google-chrome-stable", "google-chrome", "chromium", "chromium-browser")
+        discovered = [Path(found) for name in names
+                      if (found := shutil.which(name, path=environ.get("PATH", "")))]
+        fallbacks = [Path(path) for path in ("/usr/bin/google-chrome-stable", "/usr/bin/google-chrome",
+                     "/opt/google/chrome/google-chrome", "/opt/google/chrome/chrome",
+                     "/usr/bin/chromium", "/usr/bin/chromium-browser", "/snap/bin/chromium")]
+        return list(dict.fromkeys(discovered + fallbacks))
     return []
 
 
@@ -55,7 +67,8 @@ def environment_info():
     return {"platform": sys.platform, "data_directory": str(base),
             "accounts_directory": str(base / "accounts"), "runtime_python": str(executable),
             "runtime_exists": executable.is_file(),
-            "chrome_candidates": [str(p) for p in chrome_candidates()]}
+            "chrome_candidates": [str(p) for p in chrome_candidates()],
+            "graphical_session_available": bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")) if sys.platform == "linux" else None}
 
 
 def write_browser_launcher(directory, argv, platform=None):
@@ -68,12 +81,12 @@ def write_browser_launcher(directory, argv, platform=None):
         command = " ".join('"' + value.replace("%", "%%") + '"' for value in argv)
         shortcut = directory / "open-browser.cmd"
         shortcut.write_text('@echo off\nsetlocal DisableDelayedExpansion\nstart "" ' + command + "\n", encoding="utf-8")
-    elif platform == "darwin":
-        shortcut = directory / "open-browser.command"
-        shortcut.write_text("#!/bin/sh\nexec " + shlex.join(argv) + "\n", encoding="utf-8")
+    elif platform in ("darwin", "linux"):
+        shortcut = directory / ("open-browser.command" if platform == "darwin" else "open-browser.sh")
+        shortcut.write_text("#!/bin/sh\nexec " + shlex.join(argv) + "\n", encoding="utf-8", newline="\n")
         shortcut.chmod(0o700)
     else:
-        raise WorkflowError("Browser launch supports Windows and macOS only")
+        raise WorkflowError("Browser launch supports Windows, macOS, and Linux")
     return shortcut
 
 
@@ -480,13 +493,22 @@ class Account:
                 "expected_profile_path": str(self.path / "chrome-data/Default"),
                 "arguments": ["--user-data-dir=" + str(self.path / "chrome-data"), "--no-first-run", "chrome://version"]}
 
-    def launch(self):
-        if sys.platform not in ("win32", "darwin"):
-            raise WorkflowError("Browser launch supports Windows and macOS only")
-        candidates = chrome_candidates()
-        chrome = next((p for p in candidates if p.is_file()), None)
+    def launch(self, browser_path=None):
+        if sys.platform not in ("win32", "darwin", "linux"):
+            raise WorkflowError("Browser launch supports Windows, macOS, and Linux")
+        if sys.platform == "linux" and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+            raise WorkflowError("Linux launcher requires an existing graphical session; use a supported controlled browser with the profile command or provide a virtual display")
+        if browser_path is not None:
+            selected = Path(browser_path).expanduser()
+            if not selected.is_absolute():
+                raise WorkflowError("Use an absolute browser executable path")
+            candidates = [selected]
+        else:
+            candidates = chrome_candidates()
+        chrome = next((p for p in candidates if p.is_file() and
+                       (sys.platform == "win32" or os.access(p, os.X_OK))), None)
         if not chrome:
-            raise WorkflowError("Chrome executable not found in standard installation paths; inspect environment output")
+            raise WorkflowError("No executable Chrome/Chromium found; inspect environment output or supply --browser-path with the observed executable")
         info = self.profile()
         (self.path / "chrome-data").mkdir(exist_ok=True)
         argv = [str(chrome), *info["arguments"]]
@@ -508,6 +530,7 @@ def main():
         q.add_argument("account_id")
         if name == "init": q.add_argument("--config", required=True)
         if name == "verify-profile": q.add_argument("--observed-path", required=True)
+        if name == "launch": q.add_argument("--browser-path", help="Observed absolute Chrome/Chromium executable path")
         if name == "browse-stop": q.add_argument("--result", required=True, choices=("completed", "interrupted", "blocked"))
         if name == "browse-recover": q.add_argument("--observed-seconds", required=True, type=float)
         if name in ("viewed", "cart-intent"):
@@ -546,8 +569,9 @@ def main():
             else:
                 account.load()
                 name = args.command
-                if name in ("status", "profile", "launch", "browse-start", "signup-start"):
+                if name in ("status", "profile", "browse-start", "signup-start"):
                     result = getattr(account, name.replace("-", "_"))()
+                elif name == "launch": result = account.launch(args.browser_path)
                 elif name == "verify-profile": result = account.verify_profile(args.observed_path)
                 elif name == "browse-stop": result = account.browse_stop(args.result)
                 elif name == "browse-recover": result = account.browse_stop("interrupted", args.observed_seconds)
