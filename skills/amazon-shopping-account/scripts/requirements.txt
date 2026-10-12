@@ -1,6 +1,0 @@
-tzdata==2026.5
-textverified==0.1.1
-PyYAML==6.0.3
-keyring==25.6.0
-pywin32-ctypes==0.2.3; sys_platform == 'win32'
-tzlocal==5.3.1
