@@ -131,7 +131,7 @@ def validate_config(config):
     defaults = dict(marketplace="https://www.amazon.com", timezone="America/Los_Angeles",
                     product_allowlist=[], browse_seconds=300, max_cart_additions=2,
                     email_domain="agentmail.to", sms_enabled=True, sms_mode="verification", sms_max_total_usd=None,
-                    sms_max_allocations=1)
+                    sms_max_allocations=1, sms_min_balance_usd="0.75")
     if set(config) - set(defaults):
         raise WorkflowError("Unknown configuration field")
     config = defaults | config
@@ -163,6 +163,7 @@ def validate_config(config):
     if config["sms_max_total_usd"] is not None:
         if money(config["sms_max_total_usd"]) <= 0:
             raise WorkflowError("SMS spending cap must be positive")
+    config["sms_min_balance_usd"] = str(money(config["sms_min_balance_usd"]))
     if not re.fullmatch(r"[a-zA-Z0-9.-]+", config["email_domain"] or ""):
         raise WorkflowError("Invalid email domain")
     return config
@@ -351,6 +352,10 @@ class Account:
     def need_signup(self):
         if self.state["phase"] != "signup":
             raise WorkflowError("This action is available only during Day 2 signup")
+
+    def need_setup(self):
+        if self.state["phase"] == "complete" or self.state.get("active_since"):
+            raise WorkflowError("Setup/checks require an unfinished workflow with no active browsing timer")
 
     def reserve_sms(self, amount, service, kind):
         self.need_signup()

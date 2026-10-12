@@ -1,6 +1,5 @@
 """Offline tests of consequential decisions; never create accounts or call providers."""
 from datetime import datetime, timedelta, timezone
-import getpass
 import json
 import os
 from pathlib import Path
@@ -256,32 +255,6 @@ class WorkflowTests(unittest.TestCase):
             with self.assertRaises(WorkflowError): self.a.launch()
             spawn.assert_not_called()
 
-    def test_hidden_credential_input_only_requests_relevant_provider(self):
-        with patch.dict(os.environ, {}, clear=True), patch.object(providers.sys.stdin, "isatty", return_value=True), patch.object(providers.getpass, "getpass", return_value="synthetic-test-key") as prompt:
-            providers.prompt_credentials("email-create")
-            self.assertEqual(os.environ["AGENTMAIL_API_KEY"], "synthetic-test-key")
-            self.assertNotIn("TEXTVERIFIED_API_KEY", os.environ)
-            self.assertEqual(prompt.call_count, 1)
-
-    def test_existing_credentials_are_not_requested_again(self):
-        values = {"TEXTVERIFIED_API_KEY": "synthetic", "TEXTVERIFIED_API_USERNAME": "test-user"}
-        with patch.dict(os.environ, values, clear=True), patch.object(providers.sys.stdin, "isatty", return_value=False), patch.object(providers.getpass, "getpass") as prompt:
-            providers.prompt_credentials("phone-services")
-            prompt.assert_not_called()
-
-    def test_missing_credentials_require_interactive_terminal(self):
-        with patch.dict(os.environ, {}, clear=True), patch.object(providers.sys.stdin, "isatty", return_value=False), patch.object(providers.getpass, "getpass") as prompt:
-            with self.assertRaises(WorkflowError): providers.prompt_credentials("email-create")
-            prompt.assert_not_called()
-
-    def test_hidden_input_does_not_fall_back_to_echoing(self):
-        import warnings
-        def unavailable(*args):
-            warnings.warn("Hidden input unavailable", getpass.GetPassWarning)
-        with patch.dict(os.environ, {}, clear=True), patch.object(providers.sys.stdin, "isatty", return_value=True), patch.object(providers.getpass, "getpass", side_effect=unavailable):
-            with self.assertRaises(WorkflowError): providers.prompt_credentials("email-create")
-            self.assertNotIn("AGENTMAIL_API_KEY", os.environ)
-
     def test_lock_prevents_concurrent_mutation(self):
         with self.a.locked():
             with self.assertRaises(WorkflowError):
@@ -401,6 +374,7 @@ class WorkflowTests(unittest.TestCase):
     def test_phone_timeout_blocks_second_purchase(self):
         self.signup(); self.sms_config()
         client = SimpleNamespace(
+            account=SimpleNamespace(balance=10),
             services=SimpleNamespace(list=Mock(return_value=[SimpleNamespace(service_name="amazon", capability=SimpleNamespace(value="sms"))])),
             verifications=SimpleNamespace(pricing=Mock(return_value=SimpleNamespace(price=1)), create=Mock(side_effect=TimeoutError)))
         with self.assertRaises(WorkflowError): providers.phone_create(self.a, client, "amazon")
@@ -412,6 +386,7 @@ class WorkflowTests(unittest.TestCase):
     def test_over_budget_never_calls_purchase(self):
         self.signup(); self.sms_config("0.50")
         client = SimpleNamespace(
+            account=SimpleNamespace(balance=10),
             services=SimpleNamespace(list=Mock(return_value=[SimpleNamespace(service_name="amazon", capability=SimpleNamespace(value="sms"))])),
             verifications=SimpleNamespace(pricing=Mock(return_value=SimpleNamespace(price=1)), create=Mock()))
         with self.assertRaises(WorkflowError): providers.phone_create(self.a, client, "amazon")

@@ -1,69 +1,45 @@
-# Private credentials on Windows, macOS, and Linux
+# Provider credentials
 
-For first-time preparation read [setup](setup.md). Do not ask for secrets in chat, inspect credential-entry fields, take screenshots during entry, or place secrets in command arguments, logs, configuration, or skill files. The Amazon password is entered directly by the user on Amazon during Day 2; setup never stores it.
+Read during initial setup or a failed connection. No separate key-entry page, form, modal, or terminal prompt is used. Never ask for keys in chat or expose them in screenshots, command arguments, logs, or state files.
 
-The provider fields are `AGENTMAIL_API_KEY`, `TEXTVERIFIED_API_KEY`, and `TEXTVERIFIED_API_USERNAME`. Credentials may be configured before Day 2, but provider operations remain restricted to Day 2 signup.
+## Durable storage
 
-## Native storage
+Helpers read injected environment credentials first, then the OS vault through `scripts/secure_store.py`. Native backends are selected explicitly: Windows Credential Manager with local-machine persistence, macOS Keychain, and Linux Secret Service or KWallet. Plaintext, null, and automatically discovered third-party keyring backends are not accepted. A locked or unavailable vault is a setup requirement, not an absent credential or permission to create another account.
 
-The private form and interactive setup command use `credential_store.py` and the pinned `keyring` package. Only these native backends are accepted:
+Vault entries use service `AmazonShoppingSkill` and provider names `agentmail` / `textverified`. Each provider's key and associated fields are saved together. AgentMail's bootstrap entry also retains its inbox assignment so a crash between the vault write and progress save cannot create a second inbox. Provider access is shared across runs for this OS user; inbox assignments and Chrome profiles remain per workflow. Do not move a bootstrap inbox to another workflow or automatically create another provider organization.
 
-| Platform | Storage | Prerequisite |
-|---|---|---|
-| Windows | Windows Credential Manager, local-machine persistence | Same Windows user context |
-| macOS | Keychain | Supported Python build and access to the user's keychain |
-| Linux | Secret Service or KWallet | Running, accessible service and its required session/libraries |
+`setup_access.py migrate-credentials ACCOUNT_ID` reads only this account's previous account-scoped vault identifiers and copies missing provider records into the current store. It never enumerates the vault, replaces a current connection, deletes the previous entries, or contacts a provider. An incomplete previous TextVerified key/email pair needs reconnection and is never mixed with another account. Windows reads retain the existing hardened adapter and latest-value precedence; new writes use local-machine persistence.
 
-The service namespace includes the account ID and a hash of the resolved account directory, so separate accounts/data roots do not overwrite each other. Use the same root and OS user on both days. Blank form fields preserve stored values. Save updates only fields the user filled in. The advanced terminal setup requires explicit replacement confirmation. A partially failed multi-field save may have saved some credentials; inspect presence before retrying.
+The OS vault protects secrets at rest; it does not isolate them from other programs running as the same authorized user. Linux requires an available, unlocked Secret Service and the correct D-Bus session. A display alone is insufficient. With an approved external secret injector, supply `AGENTMAIL_API_KEY` and the matching pair `TEXTVERIFIED_API_KEY` / `TEXTVERIFIED_API_USERNAME` to the actual process. Partial TextVerified overrides are rejected to avoid mixing accounts. Do not write keys to shell startup files or user environment settings as a persistence workaround.
 
-The helper refuses plaintext, null, unsupported, or arbitrary third-party backends. It may select an approved native backend from a keyring chain but never uses the chain's insecure fallbacks. Do not install `keyrings.alt` or create a plaintext `.env` as a workaround. Native storage protects credentials at rest; it does not isolate them from every process with the same OS-user privileges.
+## Capture existing access
 
-### Windows replacements and existing installations
+Prefer saved access. If TextVerified is not connected, reuse the user's signed-in provider session. If needed, say only: "Please sign in to TextVerified in the open tab. I'll continue once you're signed in." Observe login completion before proceeding. Do not create a TextVerified account or reset its password automatically.
 
-Windows selects the supported native backend, then uses the Windows credential API to write one entry per field with `CRED_PERSIST_LOCAL_MACHINE`. Replacing a field overwrites that entry instead of leaving the old key in a duplicate. Older shared/compound entries remain readable; a successful save writes the new entry first, then removes that field's stale compound copy and legacy shared entry, if present. Other fields are preserved. A failed cleanup is reported as a failed save, so retry after resolving the vault error.
-
-After updating an existing Windows installation, migrate all saved fields without retyping keys:
+Navigate to the profile's API settings. Obtain the matching account email from the authorized page. Use its API-key Copy control, or privately select and copy that exact field, without returning the key through browser evaluation, accessibility snapshots, screenshots, tool output, or chat. Immediately run:
 
 ```text
-PY SKILL/scripts/setup.py harden-credentials ACCOUNT_ID
+PY SKILL/scripts/setup_access.py capture-textverified ACCOUNT_ID --account-email OBSERVED_ACCOUNT_EMAIL
 ```
 
-Resolve the interpreter, skill path, and account ID as usual. This command accesses only the three known fields for that account, ignores environment overrides, preserves each latest saved value, writes local-machine entries, and removes superseded local duplicates. It prints only a count. It does not contact providers or change workflow settings. Read-only status does not migrate credentials. Untouched older entries retain their previous persistence until saved or migrated; changing local entries cannot recall copies already roamed or backed up. This migration is Windows-only; macOS and Linux continue using their existing native stores.
+The helper consumes the local clipboard internally, validates the account through a read-only API request, saves the pair in the vault, and clears the captured clipboard value if it has not changed. The browser and helper must share that clipboard. Copy only the intended field immediately before capture; never inspect an unrelated clipboard. Clipboard managers may retain history; prefer an available direct browser-to-vault secret transfer. If the computer tools cannot copy privately, do not reveal the value to work around it: use the approved secret injector or report the missing private-transfer capability once.
 
-## Local browser form
-
-The configuration page runs on `127.0.0.1` on a temporary port, with only bundled HTML, CSS, JavaScript, and the logo. No Tkinter or hosted page is involved. The server validates exact Host and Origin headers plus a random session token for mutations, accepts only bounded JSON for the three provider fields, rejects cross-origin preflights, and never exposes a credential-reading endpoint. Pages cannot be framed; responses disable caching and referrers. The token travels in the initial URL fragment, is removed from the address bar by the page, and is never written to account files. Keep that short-lived setup URL private; it authorizes writes for this session, although it is not a provider credential.
-
-API keys are masked and sent only in a POST body to the local server, which uses the same native-store code as terminal setup. The application does not use browser storage, cookies, analytics, external assets, or request logging. Save/Configure later clear fields and stop the server; it also expires after 15 minutes. Closing the tab clears its fields; the server may remain until expiry. Browser extensions and other processes running as the same user remain outside this isolation boundary. Never inspect the page during private entry or tell the user to save credentials in their browser.
-
-## Provider access
-
-Every provider invocation checks its own process environment first, then the account's native store. Existing approved environment injection remains supported. Stored values are injected into that helper process only and restored/removed on exit. The CLI has no command that prints credentials.
-
-Use `setup.py status ACCOUNT_ID --check-credentials` for a presence/access check. It reports configured, missing, locked, or unavailable and the source, without values. This can prompt the OS to unlock or authorize access: let the user handle it. Plain `status` does not access the vault. Presence is not proof that a provider accepts the credential; setup makes no provider requests.
-
-## Manual fallback
-
-When the local browser form is unavailable, give a fully resolved command for the user's own interactive terminal:
+Existing injected access can be persisted without revealing it:
 
 ```text
-PY SKILL/scripts/setup.py configure ACCOUNT_ID --prompt
+PY SKILL/scripts/setup_access.py save-environment ACCOUNT_ID --provider agentmail
+PY SKILL/scripts/setup_access.py save-environment ACCOUNT_ID --provider textverified
 ```
 
-Replace all paths and the account ID. Windows PowerShell requires `&` before the quoted interpreter path. This command can save settings without credentials even when native storage is unavailable.
+These commands never request input. They do not overwrite a different saved credential unless `--replace` is explicitly supplied during an authorized reconnection. Do not rotate keys or replace an established provider connection merely because a request failed. Injected variables override stored values; repair a stale injection instead of overwriting the correct vault entry.
 
-When there is no usable native store, use approved environment injection or hidden provider prompts at the actual Day 2 operation:
+## Resume and scheduling
 
-```text
-PY SKILL/scripts/providers.py email-create ACCOUNT_ID --prompt-credentials
-PY SKILL/scripts/providers.py email-messages ACCOUNT_ID --after UTC_REQUEST_TIMESTAMP --prompt-credentials
-PY SKILL/scripts/providers.py phone-services ACCOUNT_ID --prompt-credentials
-```
+Run connection checks using a fresh helper process, and through the actual scheduled runner when one is selected. It must use the same OS identity and unlocked vault session, or receive the approved secret injection. Saving a key in an interactive desktop vault does not establish that an unattended runner can unlock it. Never promise automatic Day 2 execution without verifying this capability.
 
-These prompts run only in the user's interactive terminal, never agent-captured stdin. Hidden entry must be available; there is no echoed-input fallback. Prompted values last for that helper invocation only. Another invocation can require entry again if no native store or injector is configured. Do not imply that entering a key into one terminal makes it available to unrelated processes or future runs.
+Expired TextVerified bearer tokens are refreshed by the SDK. Authentication rejection needs reconnection; permission denial needs account-access review; rate limits and outages need bounded read retries. None means create another provider account. A saved `ready` timestamp is historical, not proof of current access.
 
-For unattended execution, verify access from the actual scheduled process under its OS user/session. A desktop-unlocked store is not proof that a background process can access it. If unlocking, secret entry, or the Amazon password requires the user, choose manual continuation. Do not change keychain permissions, security settings, or container privilege to remove the handoff.
-
-Sources:
+Sources checked 2026-10-12:
 - https://keyring.readthedocs.io/en/latest/
-- https://docs.python.org/3/library/getpass.html
+- https://pyperclip.readthedocs.io/en/latest/
+- https://landing.textverified.com/automate

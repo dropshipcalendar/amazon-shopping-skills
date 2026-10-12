@@ -16,7 +16,7 @@ Use `environment`/`status` output as authoritative for paths. Linux ignores empt
 
 ## Private runtime
 
-If the reported interpreter exists, use it. Otherwise create a venv with a known Python 3.11+ executable and install the pinned `scripts/requirements.txt` into it. Do not install dependencies into system Python or edit the user's shell profile.
+If the reported interpreter exists, reuse it. Otherwise create a venv with a known Python 3.11+ executable. During authorized setup, ensure the pinned `scripts/requirements.txt` is installed in that private runtime, including when updating an older installation that lacks the secure-storage or clipboard dependencies. Do not install dependencies into system Python or edit the user's shell profile.
 
 Windows PowerShell pattern (resolve `SKILL` and interpreter from observed paths):
 
@@ -64,13 +64,6 @@ Sources checked 2026-10-12:
 - https://www.chromium.org/developers/creating-and-using-profiles/
 - https://specifications.freedesktop.org/basedir/latest/
 
+## Secure storage and private capture
 
-## Private setup interface and native credential services
-
-After runtime installation, follow [setup](setup.md). The pinned `tzlocal` dependency detects the new account's IANA timezone; an existing account keeps its saved zone. The optional form uses a short-lived Python standard-library HTTP server and local browser assets. Tkinter and extra GUI packages are not required on any platform. Python itself remains required for the helpers. If a visible browser cannot open the local form, offer hidden interactive terminal setup or configuration later; continue independent Day 1 browser checks. Do not install OS packages or a new desktop automatically.
-
-`setup.py prepare` returns the exact account path and `open-setup.cmd`, `open-setup.command`, or `open-setup.sh`. The launcher contains only the interpreter/script paths, account ID, and data root. `setup.py launch` starts a background loopback server and returns a temporary `setup_url`; open it on the same computer in a visible browser. The native file launcher runs `setup.py open` to start the server and open the default browser. Verify the blank page before claiming it opened, then stop observing for private entry. No launch implicitly starts Day 1. A remote agent cannot use its own localhost to reach a server on another computer; open the URL through browser/computer tools on the server's computer instead of exposing the port to the network.
-
-Credential storage uses the pinned keyring package. Windows uses WinVault and macOS uses Keychain. macOS may require a supported Python distribution and user permission to access Keychain. Linux accepts Secret Service or supported KWallet backends; their D-Bus session and required OS libraries/service must be present. The helper accepts only supported native backends and rejects plaintext/unavailable ones. See [credentials](credentials.md).
-
-A headless Linux machine can use an existing accessible Secret Service session, or its approved environment-injection mechanism. The interactive setup command handles configuration without a graphical display, but hidden credential prompting still needs a user terminal. Do not assume a container has a secret service, persistence, or a GUI. Do not start privileged containers, weaken security, or promise unattended continuation merely to make keyring access work.
+The pinned runtime includes `keyring` and `pyperclip`; [credential setup](credentials.md) selects only native secure backends. Windows uses Credential Manager, macOS Keychain, and Linux Secret Service. On Linux, verify an unlocked vault and its D-Bus session are available to both interactive and scheduled processes. Otherwise use an existing approved secret injector; never install plaintext-keyring fallbacks or persist an unlock password in scripts. Clipboard capture additionally needs a shared working clipboard; some Linux environments require a supported clipboard utility. If unavailable, use a direct private transfer or approved secret injection, never expose the key to compensate.

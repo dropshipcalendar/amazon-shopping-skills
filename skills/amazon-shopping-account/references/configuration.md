@@ -1,48 +1,38 @@
 # Configuration and invocation
 
-For the normal installation experience follow [private setup](setup.md): `setup.py prepare` initializes settings, retains existing accounts, and creates a reopenable private configuration launcher. New accounts default to `shopping-01`, Amazon.com, a locally detected IANA timezone, and the bundled product allowlist. Show these choices without a chat questionnaire. If detection fails, ask for the missing timezone. Setup may collect credentials now or defer them to Day 2.
+For normal setup use `setup_access.py prepare shopping-01`; it detects the local IANA timezone and defaults to Amazon.com without a chat questionnaire. Existing settings are retained. Use `--marketplace` or `--timezone` for an already-known preference; request only the timezone if detection fails. For advanced/manual initialization, copy `assets/config.example.json` to a user-specific file outside this skill; that example uses America/Los_Angeles. Product names are already defined in [the bundled allowlist](../assets/product-allowlist.json); do not ask the user to provide them. When `product_allowlist` is omitted, the helper loads these 50 names and saves them in the account's config at initialization.
 
-Advanced/manual initialization still accepts `assets/config.example.json` through `workflow.py init ACCOUNT_ID --config ABSOLUTE_PATH`. The example timezone is America/Los_Angeles, not a universal detected default. Config files must never contain credentials.
+Keep the bundled JSON as the single source of default product names rather than copying it into instruction files. An explicit `product_allowlist` in account configuration overrides the defaults only when the user requests a different list. An explicit empty list blocks Day 1; remove that override to inherit the defaults. Existing accounts retain their saved list until deliberately updated. The names are allowed search categories, not exact listing titles or permission to select unrelated products.
 
-Commands (replace PY, SKILL, and ACCOUNT_ID with actual values):
+Use a stable, non-identifying account ID such as `shopping-01`, containing only lowercase letters, digits, and hyphens. Do not create a new ID to get around a blocked run.
 
-```text
-PY SKILL/scripts/setup.py prepare ACCOUNT_ID
-PY SKILL/scripts/setup.py launch ACCOUNT_ID
-PY SKILL/scripts/setup.py status ACCOUNT_ID
-PY SKILL/scripts/workflow.py status ACCOUNT_ID
-```
-
-Account IDs contain lowercase letters, digits, and hyphens and must be stable. Do not create a replacement ID to circumvent a blocked run. The prepared ID is fixed; a user can select another ID before preparation through the command argument. All per-account files live outside the skill under the platform data directory returned by the helpers. Existing configuration and progress are never reset by prepare/init.
-
-## Products and time
-
-When `product_allowlist` is omitted, initialization copies all 50 names from [the bundled allowlist](../assets/product-allowlist.json). Use them automatically; do not ask the user for product names. Explicit user-requested overrides are retained. An empty override blocks Day 1; remove it to inherit the defaults. Categories are not exact listing titles or permission to select unrelated products.
-
-`browse_seconds` defaults to 300; `max_cart_additions` defaults to 2, one unit per product. Follow the two-day order and [browser interaction](browser-interaction.md). Marketplace and timezone become fixed once Day 1 starts. Setup may not rewrite affected settings during an in-progress run.
-
-## SMS defaults and authorization
-
-`sms_enabled` defaults to true. `sms_mode` is `verification`; rental mode is rejected and legacy null modes normalize to verification. `sms_max_allocations` defaults to one. `sms_max_total_usd` defaults to null, meaning budget approval pending. It never means unlimited spending.
-
-The user supplies and explicitly accepts a positive total cap through the interactive setup command or explicit instruction. The minimal credential form never changes or approves spending. A preexisting positive configured cap remains approved; a repeated setup never overwrites it or a saved opt-out. Once approved, do not request duplicate authorization for a required one-time verification within that limit. Amazon must request a phone during Day 2, credentials must be available, and the live quote must fit the remaining cap. Helpers retain all existing reservations and uncertain-purchase safeguards. Setup refuses budget or SMS-enablement changes after any allocation attempt. It never purchases credit, rents, renews, or automatically cycles numbers.
-
-The SMS toggle is an option, not an independent spending authorization. `sms_enabled: false` blocks new SMS purchases. Retrieval/cancellation for an existing allocation remains available for reconciliation.
-
-## Credentials and readiness
-
-Follow [credentials](credentials.md). Every helper can use approved process-environment injection or the account's native OS credential store. Setup saves secrets only to that native store; it does not write them to `config.json` or `state.json`. Provider prompts remain available for supervised Day 2 operations.
-
-Missing Day 2 credentials, an unavailable store, or a pending SMS cap do not block Day 1 preparation. `setup.py status` reports configuration and historical profile observation without contacting providers or accessing the vault. Add `--check-credentials` only when checking access is appropriate; this may prompt the OS and reports no values. Report Day 1 ready only after actual live browser/profile/signed-out checks. A saved phase or profile flag is not independent proof.
-
-## Continuation
-
-Read [scheduling](scheduling.md) for an authorized full run. The state retains phase, browsing date/time, cart intents, inbox/provider IDs, SMS reservations, and scheduler bookkeeping, with no passwords, keys, or OTPs. Scheduled execution must use the same persistent account root and profile and must prove access to credentials from its actual process. If input/unlocking is required, preserve progress and use manual continuation. Preparing, installing, or saving settings does not authorize either day or create a live schedule.
-
-Offline validation:
+Commands (resolve `PY` and `SKILL` to absolute paths first):
 
 ```text
-PY -m unittest discover -s SKILL/tests -v
+PY SKILL/scripts/workflow.py init shopping-01 --config ABSOLUTE_CONFIG_PATH
+PY SKILL/scripts/workflow.py status shopping-01
 ```
 
-Tests use temporary accounts and fake stores/providers. Native backend, GUI, browser, and scheduler access must be verified in the actual environment; simulated platform tests do not prove a live OS integration.
+`init` copies validated configuration and creates a new account directory. Repeating it returns existing state and never overwrites config or profile. To make a deliberate configuration change before an affected action, edit the account's `config.json`; commands revalidate it. Never increase budgets or attempt counts to work around a failure without the user's instruction.
+
+`browse_seconds` defaults to 300; `max_cart_additions` defaults to 2 (one unit per product). These are limits, not permission to choose unrelated products. Retain the default two-day order unless the user changes it.
+
+The user has selected one-time TextVerified SMS. `sms_mode` defaults to `verification`; rental mode is rejected. Do not ask the user to choose a number type. Purchases stay disabled until `sms_max_total_usd` contains an explicitly approved positive dollar limit. The default one allocation prevents automatic number cycling. No helper rents, renews, or tops up balances. Legacy configs with `sms_mode: null` are interpreted as `verification`, while the spending-cap requirement remains in force.
+
+Preserve `sms_enabled`, which defaults to true. An existing false value opts out of TextVerified setup, checks, and new purchases; it does not prevent reconciling an already allocated number. Never change an opt-out, spending cap, or attempt allowance merely to pass readiness. Keep marketplace/timezone fixed after Day 1 starts and SMS settings fixed after an allocation attempt. Browser work follows [browser interaction](browser-interaction.md).
+
+For initial setup or a full run, follow [setup](setup.md) and [secure credentials](credentials.md). Existing injected access or native OS vault entries are reused; keys never enter chat, command arguments, or state. Authorized first-time AgentMail onboarding saves the returned key and inbox before proceeding. TextVerified setup reuses an authenticated session or guides login only when needed. No separate key-entry UI or terminal input prompt is used.
+
+`sms_min_balance_usd` defaults to `"0.75"`. Readiness requires the greater of this floor and the live one-time SMS quote, independently of the approved spending cap and allocation limit. A high balance is not spending authorization. The quote, balance, and check timestamp are saved under `setup.sms_check`; recheck before Day 2 registration and purchase. Existing configurations inherit the new floor without losing their original budgets.
+
+The state file is private runtime data, not reusable skill content. It includes phase, first browsing date, next eligible date, elapsed time, cart action records, provider IDs, SMS spending reservations, and optional schedule bookkeeping. The `schedule` object stores its creation intent ID, actual scheduler task ID, target kind (`session` or `runner`), target ID, timezone, local run time, intended first run, status, and pending operation. Older session records with `thread_id` remain readable. It intentionally contains no passwords, keys, or OTPs. Store credentials separately. Protect the account directory with the user's OS permissions; profile data itself is sensitive.
+
+## Scheduling
+
+For the full two-day run, read [continuation and scheduling](scheduling.md). If a suitable scheduler is available, register a continuation at the user's selected time and configured timezone, preserve its task ID, and remove it once the account workflow completes. Otherwise leave `schedule` empty and supply a manual resume instruction using the saved account state. The helper records state only; it does not provide a scheduler or an agent runner. Authoring, inspection, and offline testing never create a live schedule. Scheduled execution needs unattended credentials and browser control; missing capabilities do not block an otherwise usable manual run or permit weaker verification.
+
+## Runtime setup and validation
+
+Read [platform setup](platform.md) for the private Python runtime on Windows, macOS, or Linux. Use `workflow.py environment` to obtain absolute paths without reading credentials or creating files. Read dependency versions from `scripts/requirements.txt`, not from this prose.
+
+Run `PY -m unittest discover -s SKILL/tests -v` for offline behavioral checks. Tests use temporary directories and fake providers; never run account-creation tests against Amazon. Live provider availability, Amazon acceptance, and browser-control compatibility require a separately authorized real run.

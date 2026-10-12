@@ -1,48 +1,18 @@
-"""Bounded AgentMail and TextVerified operations. Invoked only during signup."""
+"""Bounded provider access. Setup/checks are separate from Day 2 SMS purchases."""
 from __future__ import annotations
 
 import argparse
-import getpass
 from datetime import datetime
 import itertools
 import json
-import os
 import sys
 import uuid
 from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, build_opener, HTTPRedirectHandler
+from urllib.error import HTTPError, URLError
 
 from workflow import Account, WorkflowError, money, stamp
-from credential_store import helper_environment
-
-
-def prompt_credentials(command):
-    """Optional local terminal entry; never use an echoed-input fallback."""
-    names = ("AGENTMAIL_API_KEY",) if command.startswith("email-") else ("TEXTVERIFIED_API_KEY", "TEXTVERIFIED_API_USERNAME")
-    missing = [name for name in names if not os.environ.get(name)]
-    if missing and (sys.stdin is None or not sys.stdin.isatty()):
-        raise WorkflowError("Credential entry requires the user's interactive local terminal; never paste keys into chat")
-    for name in missing:
-        # getpass raises rather than echoing if hidden input is unavailable.
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", getpass.GetPassWarning)
-            try:
-                value = getpass.getpass(f"Enter {name} (hidden, this run only): ")
-            except (getpass.GetPassWarning, EOFError):
-                raise WorkflowError("Hidden credential input unavailable; use an approved environment injector") from None
-            except KeyboardInterrupt:
-                raise WorkflowError("Credential entry cancelled") from None
-        if not value:
-            raise WorkflowError(f"No value entered for {name}")
-        os.environ[name] = value
-
-
-def secret(name):
-    value = os.environ.get(name)
-    if not value:
-        raise WorkflowError(f"Set {name} through a local secret store or environment")
-    return value
+from secure_store import require
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -50,18 +20,36 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def agentmail_request(method, route, payload=None):
-    token = secret("AGENTMAIL_API_KEY")
+def agentmail_request(method, route, payload=None, *, credential=None, anonymous=False):
+    if anonymous and (method, route) != ("POST", "agent/sign-up"):
+        raise WorkflowError("Anonymous requests are restricted to initial AgentMail signup")
+    headers = {"Content-Type": "application/json"}
+    if not anonymous:
+        headers["Authorization"] = "Bearer " + (credential or require("agentmail"))["api_key"]
     body = None if payload is None else json.dumps(payload).encode("utf-8")
     request = Request("https://api.agentmail.to/v0/" + route, data=body, method=method,
-                      headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+                      headers=headers)
     # No HTTP mutation retries and no credential-bearing cross-host redirects.
-    with build_opener(NoRedirect()).open(request, timeout=20) as response:
-        return json.load(response)
+    try:
+        with build_opener(NoRedirect()).open(request, timeout=20) as response:
+            return json.load(response)
+    except HTTPError as exc:
+        if exc.code == 401:
+            raise WorkflowError("AgentMail authentication rejected; reconnect the existing account") from None
+        if exc.code == 403:
+            raise WorkflowError("AgentMail permission denied; inspect existing account access") from None
+        if exc.code == 429 or exc.code >= 500:
+            raise WorkflowError("AgentMail temporarily unavailable; preserve credentials and retry reads later") from None
+        raise WorkflowError("AgentMail request rejected; inspect the pending operation without repeating signup") from None
+    except (URLError, TimeoutError):
+        raise WorkflowError("AgentMail connection unavailable; preserve state and reconcile any pending mutation") from None
 
 
-def email_create(account, request=agentmail_request):
-    account.need_signup()
+def email_create(account, request=agentmail_request, *, setup=False):
+    if setup:
+        account.need_setup()
+    else:
+        account.need_signup()
     if account.state["inbox"]:
         return account.state["inbox"]
     # Persist the same idempotency key BEFORE any request, including failures.
@@ -102,7 +90,7 @@ def email_message(account, message_id, request=agentmail_request):
             "untrusted_content": True}
 
 
-def textverified_client():
+def textverified_client(credential=None):
     from textverified import TextVerified
     import requests
     from requests.adapters import HTTPAdapter
@@ -113,10 +101,17 @@ def textverified_client():
                 raise WorkflowError("Unexpected TextVerified API origin")
             kwargs["timeout"] = 20
             kwargs["allow_redirects"] = False
-            return super().request(method, url, **kwargs)
+            response = super().request(method, url, **kwargs)
+            if response.status_code == 401:
+                raise WorkflowError("TextVerified authentication rejected; reconnect the existing account")
+            if response.status_code == 403:
+                raise WorkflowError("TextVerified permission denied; inspect existing account access")
+            if response.status_code == 429 or response.status_code >= 500:
+                raise WorkflowError("TextVerified temporarily unavailable; preserve credentials and retry reads later")
+            return response
 
-    client = TextVerified(api_key=secret("TEXTVERIFIED_API_KEY"),
-                          api_username=secret("TEXTVERIFIED_API_USERNAME"))
+    credential = credential or require("textverified")
+    client = TextVerified(api_key=credential["api_key"], api_username=credential["username"])
     # The pinned SDK exposes session publicly. Disable automatic mutation retries.
     client.session.close()
     client.session = BoundedSession()
@@ -126,11 +121,10 @@ def textverified_client():
 
 def phone_services(account, client):
     from textverified import NumberType, ReservationType
-    account.need_signup()
-    if account.config["sms_mode"] != "verification":
-        raise WorkflowError("Only one-time SMS verification is supported")
     if not account.config["sms_enabled"]:
         raise WorkflowError("SMS verification is disabled in account settings")
+    if account.config["sms_mode"] != "verification":
+        raise WorkflowError("Only one-time SMS verification is supported")
     items = client.services.list(number_type=NumberType.MOBILE, reservation_type=ReservationType.VERIFICATION)
     return [{"service_name": s.service_name, "capability": s.capability.value}
             for s in items if "amazon" in s.service_name.casefold()]
@@ -138,7 +132,6 @@ def phone_services(account, client):
 
 def phone_quote(account, client, service):
     from textverified import ReservationCapability
-    account.need_signup()
     if account.config["sms_mode"] != "verification":
         raise WorkflowError("Only one-time SMS verification is supported")
     choices = phone_services(account, client)
@@ -148,13 +141,29 @@ def phone_quote(account, client, service):
     return {"service": service, "price_usd": str(money(result.price))}
 
 
+def phone_readiness(account, client, service):
+    """Read live balance/quote; never reserve a number or change the budget."""
+    estimate = phone_quote(account, client, service)
+    balance = money(client.account.balance)
+    required = max(money(account.config["sms_min_balance_usd"]), money(estimate["price_usd"]))
+    reserved = sum((money(x["reserved_usd"]) for x in account.state["sms"]), money(0))
+    cap = account.config["sms_max_total_usd"]
+    budget_ok = cap is not None and reserved + money(estimate["price_usd"]) <= money(cap)
+    allocation_ok = len(account.state["sms"]) < account.config["sms_max_allocations"]
+    check = dict(checked_at=stamp(), service=service, quote_usd=estimate["price_usd"],
+                 balance_usd=str(balance), required_balance_usd=str(required),
+                 balance_ok=balance >= required, budget_ok=budget_ok, allocation_ok=allocation_ok)
+    check["ready"] = check["balance_ok"] and budget_ok and allocation_ok
+    account.state.setdefault("setup", {})["sms_check"] = check
+    account.save()
+    return check
+
+
 def phone_create(account, client, service):
     from textverified import ReservationCapability
     account.need_signup()
     if account.config["sms_mode"] != "verification":
         raise WorkflowError("Only one-time SMS verification is supported")
-    if not account.config["sms_enabled"]:
-        raise WorkflowError("SMS verification is disabled in account settings")
     existing = [x for x in account.state["sms"] if x["status"] == "allocated"]
     if existing:
         if existing[-1]["kind"] != "verification":
@@ -164,7 +173,12 @@ def phone_create(account, client, service):
         return existing[-1]
     if any(x["status"] in ("pending", "uncertain") for x in account.state["sms"]):
         raise WorkflowError("Reconcile the prior SMS purchase before any new request")
-    estimate = phone_quote(account, client, service)
+    check = phone_readiness(account, client, service)
+    if not check["balance_ok"]:
+        raise WorkflowError(f"TextVerified balance ${check['balance_usd']}; requires ${check['required_balance_usd']}. Add funds to continue")
+    if not check["budget_ok"] or not check["allocation_ok"]:
+        raise WorkflowError("SMS quote exceeds the authorized budget or allocation limit")
+    estimate = {"price_usd": check["quote_usd"]}
     entry = account.reserve_sms(estimate["price_usd"], service, "verification")
     try:
         verification = client.verifications.create(service_name=service,
@@ -221,36 +235,33 @@ def phone_cancel(account, client):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--root")
-    p.add_argument("command", choices=("email-create", "email-messages", "email-message", "phone-services", "phone-quote", "phone-create", "phone-messages", "phone-cancel"))
+    p.add_argument("command", choices=("email-create", "email-messages", "email-message", "phone-services", "phone-quote", "phone-check", "phone-create", "phone-messages", "phone-cancel"))
     p.add_argument("account_id")
     p.add_argument("--after")
     p.add_argument("--message-id")
     p.add_argument("--service")
-    p.add_argument("--prompt-credentials", action="store_true", help="Read missing credentials with hidden input in the user's local terminal, for this run only")
     args = p.parse_args()
-    if args.command in ("phone-quote", "phone-create") and not args.service: p.error("--service is required")
+    if args.command in ("phone-quote", "phone-create", "phone-check") and not args.service: p.error("--service is required")
     if args.command == "email-messages" and not args.after: p.error("--after is required")
     if args.command == "email-message" and not args.message_id: p.error("--message-id is required")
     try:
         account = Account(args.account_id, args.root)
         with account.locked():
-            account.load().need_signup()
-            names = ("AGENTMAIL_API_KEY",) if args.command.startswith("email-") else ("TEXTVERIFIED_API_KEY", "TEXTVERIFIED_API_USERNAME")
-            with helper_environment(account, names):
-                if args.prompt_credentials:
-                    prompt_credentials(args.command)
-                if args.command == "email-create": result = email_create(account)
-                elif args.command == "email-messages": result = email_messages(account, args.after)
-                elif args.command == "email-message": result = email_message(account, args.message_id)
-                else:
-                    if args.command in ("phone-services", "phone-quote", "phone-create") and not account.config["sms_enabled"]:
-                        raise WorkflowError("SMS verification is disabled in account settings")
-                    client = textverified_client()
-                    try:
-                        action = globals()[args.command.replace("-", "_")]
-                        result = action(account, client, args.service) if args.command in ("phone-quote", "phone-create") else action(account, client)
-                    finally:
-                        client.session.close()
+            account.load()
+            if args.command in ("phone-services", "phone-quote", "phone-check"):
+                account.need_setup()
+            else:
+                account.need_signup()
+            if args.command == "email-create": result = email_create(account)
+            elif args.command == "email-messages": result = email_messages(account, args.after)
+            elif args.command == "email-message": result = email_message(account, args.message_id)
+            else:
+                client = textverified_client()
+                try:
+                    action = phone_readiness if args.command == "phone-check" else globals()[args.command.replace("-", "_")]
+                    result = action(account, client, args.service) if args.command in ("phone-quote", "phone-create", "phone-check") else action(account, client)
+                finally:
+                    client.session.close()
             print(json.dumps(result, ensure_ascii=False))
     except WorkflowError as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)})); return 2

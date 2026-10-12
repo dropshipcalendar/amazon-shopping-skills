@@ -26,7 +26,7 @@ Select the appropriate agent when prompted. Omit `--global` for a project-local 
 
 ### Copy-and-paste setup instruction
 
-> Install with `npx skills add dropshipcalendar/amazon-shopping-skills --skill amazon-shopping-account --global`, then read and follow the installed skill's `SKILL.md`.
+> Install the amazon-shopping-account skill from https://github.com/dropshipcalendar/amazon-shopping-skills and read its SKILL.md from the complete local folder. Run initial setup: prepare the dedicated Chrome profile, reuse existing provider access, or sign up for AgentMail if I have no existing account to reuse; guide my TextVerified login only if needed. Save credentials securely and check the balance and current one-time SMS price. Keep messages brief. Do not start Amazon browsing or registration, buy a phone number or credits, or schedule anything yet.
 
 ## Required computer capabilities
 
@@ -34,11 +34,15 @@ Select the appropriate agent when prompted. Omit `--global` for a project-local 
 - Browser or mouse/keyboard/screenshot tools that can identify and control a dedicated Chrome profile.
 - Ability to read/write local files and run Python commands, directly or through a terminal window.
 - The user's account name, marketplace, timezone, and secure access to the registration password. Product search names are bundled.
-- AgentMail credentials; TextVerified credentials and an approved spending cap if SMS is needed.
+- An available native OS vault or approved secret injector. Initial setup can create AgentMail access; TextVerified needs an existing account, guided login when necessary, sufficient credit, and an approved SMS spending cap.
 
 Follow [platform setup](skills/amazon-shopping-account/references/platform.md) to create a private Python environment with the pinned [requirements](skills/amazon-shopping-account/scripts/requirements.txt). Resolve the installed skill's actual path on the recipient's computer.
 
-Follow [private setup](skills/amazon-shopping-account/references/setup.md) for the local browser form or hidden interactive terminal prompts. The form keeps the Soft blue design and needs no Tkinter or extra GUI package. Settings and browser data remain outside the skill. Optional provider credentials are stored in supported native OS storage (Windows Credential Manager, macOS Keychain, or Linux Secret Service/KWallet) and retrieved by each provider helper; existing approved environment injection remains supported. Never paste secrets into chat, commit them, or put them in command arguments. Missing Day 2 credentials or an unavailable configuration form do not block Day 1 after successful dedicated-browser verification and do not authorize provisioning another provider account. SMS is enabled by default, but a user-approved positive total cap is required before a one-time allocation.
+Follow [initial setup](skills/amazon-shopping-account/references/setup.md) to connect providers once. The agent reuses saved access, can perform authorized first-time AgentMail signup, and guides TextVerified login only when needed. It retrieves the key privately from the authorized session and stores it without a separate key-entry form. Setup stops before any Amazon browsing or registration unless the full workflow was requested.
+
+[Credential storage](skills/amazon-shopping-account/references/credentials.md) uses Windows Credential Manager, macOS Keychain, or Linux Secret Service through explicitly selected native backends. Existing secret injection remains supported with `AGENTMAIL_API_KEY`, `TEXTVERIFIED_API_KEY`, and `TEXTVERIFIED_API_USERNAME`. No keys belong in chat, command arguments, repository files, or progress logs. If private capture or an unlocked secure vault is unavailable, setup reports the missing capability instead of exposing a key or using a plaintext fallback.
+
+Readiness checks compare the live one-time Amazon SMS quote with available balance and the approved spending/attempt limits. The default balance floor is **$0.75**, and the required balance is the greater of that floor and the current quote; $0.75 is not a fixed price guarantee. Checks run at setup, before Day 2 registration, and again before buying a number if Amazon requests one. No automatic credit top-ups.
 
 ## How the two days continue
 
@@ -47,7 +51,7 @@ Progress lives in local state files, so the agent does not need to remember a pr
 - **Automatic:** If an available scheduler can resume the agent or invoke a verified agent runner with access to the same files, credentials, and browser profile, the agent records that task's ID and removes it after completion. A timer that only launches a page or runs a helper is insufficient.
 - **Manual:** Without those capabilities, the agent saves Day 1 and provides a dated resume instruction. Give it to a compatible computer-using agent on or after the eligible date. A reminder is not automatic execution.
 
-Downloading or installing the skill starts neither mode. A later explicit request to run it sets the execution scope. If unattended completion is essential, establish those capabilities before starting. The selected computer must retain its account data and browser profile through Day 2, including across cloud restarts. Prefer the current computer when its capabilities are sufficient; Linux alone is not a reason to switch to a connected laptop. Platform launcher behavior has offline tests; live browser and scheduler compatibility must be verified in each environment.
+Downloading or installing the skill starts neither mode. An explicit setup request may connect providers and prepare the profile; a full-run request is needed for the two-day workflow. If unattended completion is essential, establish those capabilities before starting. The selected computer must retain its account data and browser profile through Day 2, including across cloud restarts. Prefer the current computer when its capabilities are sufficient; Linux alone is not a reason to switch to a connected laptop. Platform launcher behavior has offline tests; live browser and scheduler compatibility must be verified in each environment.
 
 ## Private runtime data
 
@@ -57,7 +61,7 @@ Account state and Chrome profiles are stored outside the skill folder:
 - macOS: `~/Library/Application Support/AmazonShoppingSkill`
 - Linux: `$XDG_DATA_HOME/AmazonShoppingSkill`, or `~/.local/share/AmazonShoppingSkill` when that variable is absent, empty, or relative. Use verified persistent storage for cloud runs.
 
-Do not publish or share those directories. Each user has their own credentials, profile, state, and optional scheduled task. The skill preserves progress and prevents repeating uncertain actions; it cannot guarantee account acceptance by Amazon.
+Do not publish or share those directories. Keys live separately in the OS vault. Nonsecret setup checks live in account state; a shared `.connections/agentmail-signup.json` records any one-shot onboarding intent. Each user has their own credentials, profile, state, and optional scheduled task. The skill preserves progress and prevents repeating uncertain actions; it cannot guarantee account acceptance by Amazon.
 
 ## Repository layout
 
@@ -82,7 +86,7 @@ With the requirements installed in a private Python environment, run:
 python -m unittest discover -s skills/amazon-shopping-account/tests -v
 ```
 
-Use that environment's interpreter path or `python3` where appropriate. Tests use temporary state and fake providers/schedulers, not live account creation.
+Use that environment's interpreter path or `python3` where appropriate. Tests use temporary state and fake vaults, clipboards, providers, and schedulers. They never create live accounts or read actual stored credentials.
 
 To check discovery without installing the skill, optionally run:
 

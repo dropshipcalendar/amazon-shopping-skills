@@ -19,6 +19,7 @@ htmlcov/
 
 # Account state and browser data must stay outside the distributable skill
 accounts/
+.connections/
 AmazonShoppingSkill/
 chrome-data/
 state.json

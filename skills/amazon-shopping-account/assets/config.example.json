@@ -6,6 +6,7 @@
   "email_domain": "agentmail.to",
   "sms_enabled": true,
   "sms_mode": "verification",
+  "sms_min_balance_usd": "0.75",
   "sms_max_total_usd": null,
   "sms_max_allocations": 1
 }
