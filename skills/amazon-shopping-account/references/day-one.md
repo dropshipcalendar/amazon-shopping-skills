@@ -11,4 +11,4 @@ Prerequisites: observed dedicated profile and Amazon signed out. Use the account
 
 If the previous process crashed and state still says the timer is active, run `browse-recover --observed-seconds N` with only the portion supported by recorded actions. This excludes unknown idle time and avoids duplicate work. If evidence is missing, use zero and inspect existing cart intents first.
 
-Day 2 remains unavailable until this routine is complete and the next calendar date has arrived. After completion, follow `scheduling.md` to confirm the existing same-chat continuation and report its intended time; do not create a duplicate or stay alive overnight. Preserve the guest cart; its persistence through registration is not guaranteed.
+Day 2 remains unavailable until this routine is complete and the next calendar date has arrived. After completion, follow `scheduling.md` to confirm an existing continuation or supply a manual resume instruction with the eligible date, timezone, account ID, and absolute skill/state paths. Do not create a duplicate schedule or stay alive overnight. Preserve the guest cart; its persistence through registration is not guaranteed.
