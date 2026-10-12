@@ -47,12 +47,39 @@ class SchedulingTests(unittest.TestCase):
         self.assertIsNone(second["automation_id"])
         self.assertEqual(second["first_run_at"], "2026-10-13T09:00:00-07:00")
 
-    def test_prepare_cannot_replace_chat_time_or_timezone(self):
+    def test_prepare_cannot_replace_target_time_or_timezone(self):
         self.prepare()
         for chat, time in (("different-chat", "09:00"), ("test-chat", "10:00")):
             with self.assertRaises(WorkflowError): self.a.schedule_prepare(chat, time)
         self.a.config["timezone"] = "UTC"
         with self.assertRaises(WorkflowError): self.prepare()
+
+    def test_runner_target_needs_no_chat_id_and_survives_reload(self):
+        first = self.a.schedule_prepare("local-agent-runner", "09:00", "runner").copy()
+        self.a.load()
+        self.assertEqual(first, self.a.schedule_prepare("local-agent-runner", "09:00", "runner"))
+        self.assertEqual(first["target_kind"], "runner")
+        self.assertEqual(first["target_id"], "local-agent-runner")
+        self.assertNotIn("thread_id", first)
+        with self.assertRaises(WorkflowError):
+            self.a.schedule_prepare("local-agent-runner", "09:00", "session")
+
+    def test_legacy_session_record_is_reused_without_losing_automation(self):
+        self.active()
+        saved = self.a.state["schedule"]
+        saved["thread_id"] = saved.pop("target_id")
+        del saved["target_kind"]
+        self.a.save()
+        self.a.load()
+        result = self.prepare()
+        self.assertEqual(result["automation_id"], "fake-automation")
+        self.assertEqual(result["thread_id"], "test-chat")
+
+    def test_invalid_target_does_not_create_schedule(self):
+        for target, kind in (("", "session"), ("runner", "unknown")):
+            with self.assertRaises(WorkflowError):
+                self.a.schedule_prepare(target, "09:00", kind)
+        self.assertIsNone(self.a.state["schedule"])
 
     def test_record_requires_matching_intent_and_id(self):
         intent = self.prepare()
@@ -164,12 +191,22 @@ class SchedulingTests(unittest.TestCase):
         def run(*args):
             result = subprocess.run(command + list(args), capture_output=True, text=True, check=True)
             return json.loads(result.stdout)
-        intent = run("schedule-prepare", "schedule-test", "--thread-id", "offline-test-chat", "--local-time", "09:00")
+        intent = run("schedule-prepare", "schedule-test", "--target-id", "offline-runner", "--target-kind", "runner", "--local-time", "09:00")
+        self.assertEqual(intent["target_id"], "offline-runner")
+        self.assertEqual(intent["target_kind"], "runner")
         saved = run("schedule-record", "schedule-test", "--intent-id", intent["intent_id"], "--automation-id", "offline-fake-id")
         self.assertEqual(saved["automation_id"], "offline-fake-id")
         run("schedule-action", "schedule-test", "--automation-id", "offline-fake-id", "--action", "remove")
         removed = run("schedule-result", "schedule-test", "--automation-id", "offline-fake-id", "--action", "remove", "--outcome", "confirmed")
         self.assertEqual(removed["status"], "removed")
+
+    def test_legacy_cli_option_still_addresses_a_session(self):
+        command = [sys.executable, str(Path(workflow.__file__)), "--root", self.tmp.name,
+                   "schedule-prepare", "schedule-test", "--thread-id", "existing-session", "--local-time", "09:00"]
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        intent = json.loads(result.stdout)
+        self.assertEqual(intent["target_id"], "existing-session")
+        self.assertEqual(intent["target_kind"], "session")
 
 
 if __name__ == "__main__":

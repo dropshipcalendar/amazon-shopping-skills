@@ -54,6 +54,18 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.a.state["phase"], "browsing")
         self.assertIn("Desk lamp", self.a.config["product_allowlist"])
 
+    def test_manual_resume_uses_disk_state_without_scheduler_or_session(self):
+        self.finish_day_one()
+        resumed = Account("shopping-01", self.tmp.name)
+        resumed.load()
+        self.time += timedelta(days=1)
+        resumed.signup_start()
+        resumed.state["inbox"] = {"inbox_id": "fake-inbox", "email": "test@example.invalid"}
+        result = resumed.complete("Simulated observed confirmation")
+        self.assertEqual(result["phase"], "complete")
+        self.assertIsNone(result["schedule"])
+        self.assertFalse(result["schedule_cleanup_required"])
+
     def test_bundled_defaults_are_ready_without_product_input(self):
         config = validate_config({})
         names = config["product_allowlist"]
