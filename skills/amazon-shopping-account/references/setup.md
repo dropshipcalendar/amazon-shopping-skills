@@ -1,6 +1,6 @@
 # Initial setup
 
-Follow the entry rule and message style in [SKILL.md](../SKILL.md). Initial setup prepares the profile and provider access; it does not start Amazon browsing, registration, SMS purchases, credit top-ups, or scheduling.
+Follow the entry rule and message style in [SKILL.md](../SKILL.md). Initial setup prepares the profile and provider access. For the default install-and-use request, continue to scheduling after these checks; explicit setup-only requests stop here. Setup itself does not browse Amazon, register, buy SMS numbers, or top up credits.
 
 ## Runtime
 
@@ -18,7 +18,7 @@ In commands below, resolve `PY` to the private interpreter and `SKILL` to this c
 
 If funding is short, say: "TextVerified needs at least $X; its balance is $Y. Please add funds in the open tab." Ask once for a missing spending cap; balance does not authorize spending. Continue independent preparation while awaiting required input.
 
-When ready, say: "Setup complete. Email and SMS access are connected, and the dedicated browser is ready." If SMS is disabled, report that instead. Stop after setup unless the two-day workflow was requested.
+When ready for the default full workflow, follow [scheduling](scheduling.md) before ending this turn. Use the setup-and-timeline response in SKILL.md only after confirming Day 1's task. For an explicit setup-only request, say: "Setup complete. The dedicated browser, email, and SMS access are ready. Both days remain unstarted." If SMS is disabled, report that instead.
 
 ## Resume and recovery
 
