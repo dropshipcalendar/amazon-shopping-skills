@@ -130,11 +130,13 @@ def validate_config(config):
         config["product_allowlist"] = json.loads(allowlist_path.read_text(encoding="utf-8"))
     defaults = dict(marketplace="https://www.amazon.com", timezone="America/Los_Angeles",
                     product_allowlist=[], browse_seconds=300, max_cart_additions=2,
-                    email_domain="agentmail.to", sms_mode="verification", sms_max_total_usd=None,
+                    email_domain="agentmail.to", sms_enabled=True, sms_mode="verification", sms_max_total_usd=None,
                     sms_max_allocations=1)
     if set(config) - set(defaults):
         raise WorkflowError("Unknown configuration field")
     config = defaults | config
+    if type(config["sms_enabled"]) is not bool:
+        raise WorkflowError("sms_enabled must be true or false")
     try:
         ZoneInfo(config["timezone"])
     except (ZoneInfoNotFoundError, TypeError, ValueError):
@@ -244,6 +246,8 @@ class Account:
                     confirmed_cart_additions=sum(x["status"] == "confirmed" for x in self.state["cart"]),
                     uncertain_cart_actions=[x["id"] for x in self.state["cart"] if x["status"] == "intent"],
                     sms_reserved_usd=str(sum((money(x["reserved_usd"]) for x in self.state["sms"]), Decimal(0))),
+                    sms_enabled=self.config["sms_enabled"],
+                    sms_budget_status="approved" if self.config["sms_max_total_usd"] is not None else "pending",
                     schedule=self.state.get("schedule"),
                     schedule_cleanup_required=bool(self.state["phase"] == "complete" and self.state.get("schedule") and self.state["schedule"]["status"] != "removed"),
                     account_directory=str(self.path), config_path=str(self.config_path),
@@ -350,6 +354,8 @@ class Account:
 
     def reserve_sms(self, amount, service, kind):
         self.need_signup()
+        if not self.config["sms_enabled"]:
+            raise WorkflowError("SMS verification is disabled in account settings")
         if kind != "verification":
             raise WorkflowError("Only one-time SMS verification allocations are allowed")
         if self.config["sms_mode"] != kind or self.config["sms_max_total_usd"] is None:

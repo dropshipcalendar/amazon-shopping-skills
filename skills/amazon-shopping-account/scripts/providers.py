@@ -13,6 +13,7 @@ from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 from workflow import Account, WorkflowError, money, stamp
+from credential_store import helper_environment
 
 
 def prompt_credentials(command):
@@ -128,6 +129,8 @@ def phone_services(account, client):
     account.need_signup()
     if account.config["sms_mode"] != "verification":
         raise WorkflowError("Only one-time SMS verification is supported")
+    if not account.config["sms_enabled"]:
+        raise WorkflowError("SMS verification is disabled in account settings")
     items = client.services.list(number_type=NumberType.MOBILE, reservation_type=ReservationType.VERIFICATION)
     return [{"service_name": s.service_name, "capability": s.capability.value}
             for s in items if "amazon" in s.service_name.casefold()]
@@ -150,6 +153,8 @@ def phone_create(account, client, service):
     account.need_signup()
     if account.config["sms_mode"] != "verification":
         raise WorkflowError("Only one-time SMS verification is supported")
+    if not account.config["sms_enabled"]:
+        raise WorkflowError("SMS verification is disabled in account settings")
     existing = [x for x in account.state["sms"] if x["status"] == "allocated"]
     if existing:
         if existing[-1]["kind"] != "verification":
@@ -230,18 +235,22 @@ def main():
         account = Account(args.account_id, args.root)
         with account.locked():
             account.load().need_signup()
-            if args.prompt_credentials:
-                prompt_credentials(args.command)
-            if args.command == "email-create": result = email_create(account)
-            elif args.command == "email-messages": result = email_messages(account, args.after)
-            elif args.command == "email-message": result = email_message(account, args.message_id)
-            else:
-                client = textverified_client()
-                try:
-                    action = globals()[args.command.replace("-", "_")]
-                    result = action(account, client, args.service) if args.command in ("phone-quote", "phone-create") else action(account, client)
-                finally:
-                    client.session.close()
+            names = ("AGENTMAIL_API_KEY",) if args.command.startswith("email-") else ("TEXTVERIFIED_API_KEY", "TEXTVERIFIED_API_USERNAME")
+            with helper_environment(account, names):
+                if args.prompt_credentials:
+                    prompt_credentials(args.command)
+                if args.command == "email-create": result = email_create(account)
+                elif args.command == "email-messages": result = email_messages(account, args.after)
+                elif args.command == "email-message": result = email_message(account, args.message_id)
+                else:
+                    if args.command in ("phone-services", "phone-quote", "phone-create") and not account.config["sms_enabled"]:
+                        raise WorkflowError("SMS verification is disabled in account settings")
+                    client = textverified_client()
+                    try:
+                        action = globals()[args.command.replace("-", "_")]
+                        result = action(account, client, args.service) if args.command in ("phone-quote", "phone-create") else action(account, client)
+                    finally:
+                        client.session.close()
             print(json.dumps(result, ensure_ascii=False))
     except WorkflowError as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)})); return 2
