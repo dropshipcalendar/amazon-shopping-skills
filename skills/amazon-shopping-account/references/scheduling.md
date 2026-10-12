@@ -1,70 +1,57 @@
 # Continuation and scheduling
 
-The saved account state is the source of progress across days, not conversation memory. A computer-using agent can resume by reading this skill and that state from disk. Scheduling is optional and depends on capabilities actually available to the agent.
+Use this procedure for a requested two-day run or its existing schedule. Initial setup alone does not schedule work.
 
-Use this flow only while executing a user-authorized two-day run or managing its existing schedule. Editing, downloading, installing, or testing the skill does not authorize a live schedule.
+## Choose and prepare continuation
 
-## Choose a continuation method
+Prefer an available scheduler that resumes the same agent session. An existing documented agent runner is also usable. Verify that it can access the persistent skill/state files, dedicated browser, credentials, and registration password from its actual execution context. A timer that only opens a page is not an agent runner.
 
-1. Inspect the current computer and available scheduling capabilities. For a cloud computer, confirm that account data, the browser profile, and the runner survive restarts and remain accessible on Day 2; use a verified persistent volume when needed. A schedule does not make temporary storage persistent. Do not switch to a connected laptop solely because the cloud computer runs Linux. Prefer resuming the existing agent session when supported. An OS task scheduler or another scheduler is also usable if it can invoke an existing, documented agent runner on this computer with a saved task instruction. Do not invent an agent executable, command, API, session ID, or service.
-2. Verify that the continuation can read the same skill and state files, access the dedicated browser profile, and obtain credentials and the registration password securely. Run setup checks through that actual runner: the same unlocked OS vault/DBus session or approved secret injection must be accessible, not merely the interactive browser session. A timer that merely opens a page or runs `workflow.py` cannot execute the agent's browser workflow. A reminder is a manual handoff, not unattended execution.
-3. If these capabilities are absent, use the manual fallback below. If the user specifically requires unattended completion, explain the missing capability before starting. Do not install a service or provision another agent automatically.
-4. Obtain the user's Day 2 local time and use the account's timezone. The next calendar day is not necessarily 24 elapsed hours later. Confirm machine availability and the selected runner's requirements; do not promise that a powered-off computer will wake or a graphical session will be usable while locked.
+For new schedules use the user's requested time, otherwise **09:00 on the next eligible local day** in the saved timezone. Determine computer/session availability with available tools; ask only for information you cannot establish. If unattended execution is unavailable, use the manual fallback. Do not invent a runner, install a service, or promise wakeup of an unavailable computer.
 
-## Register one supported schedule
-
-Run `workflow.py status ACCOUNT_ID`. If `schedule` exists, reconcile it with the scheduler that owns its task ID before creating anything. Reuse that task; do not silently reactivate paused or removed schedules.
-
-For a new schedule, record an intent before creating the external task:
+Read `workflow.py status ACCOUNT_ID`. Reconcile any existing schedule with its provider and reuse it. Before creating a new task, save its intent:
 
 ```text
 PY SKILL/scripts/workflow.py schedule-prepare ACCOUNT_ID --target-kind session --target-id OBSERVED_SESSION_ID --local-time HH:MM
 ```
 
-For a runner, use `--target-kind runner --target-id VERIFIED_RUNNER_ID_OR_PATH`. This is a nonsecret identifier for the verified runner; credentials and secret command arguments do not belong in state. The helper also accepts the older `--thread-id` alias for existing integrations.
+For an existing runner use `--target-kind runner --target-id VERIFIED_RUNNER_ID_OR_PATH`. Identifiers and task instructions contain no secrets.
 
-Create the task using the selected scheduler's documented interface. Prefer one execution at the intended Day 2 date/time. A daily continuation until completion is acceptable if that scheduler requires recurrence. Supply the resume instruction below to the agent through its actual supported interface, preserving the original profile and account state. Use the scheduler's task description to identify this account, skill, and execution target so an uncertain creation can be reconciled. Never run the browser from two concurrent agent instances.
-
-After confirmed creation, save the actual task ID or unambiguous task path returned by that scheduler:
+Create the task through that scheduler's supported interface, preferably as one execution. If recurrence is required, continue only until completion. Include the account and execution target so an uncertain result can be located. After confirmed creation:
 
 ```text
 PY SKILL/scripts/workflow.py schedule-record ACCOUNT_ID --intent-id SAVED_INTENT_ID --automation-id RETURNED_TASK_ID
 ```
 
-`automation_id` is the helper's generic field for a scheduler task ID. It is not tied to a particular service. Keep enough scheduler information in the identifier or its task description to find the same task later.
+Confirm the accepted date/time and reconcile it if the actual Day 1 date changes. Eligibility follows the next local calendar date, not a fixed 24-hour delay.
 
-If creation is uncertain, inspect that scheduler's task listing and details using the saved account and target identity. Recover and record the existing task. Only verified absence permits `schedule-creation-result --intent-id ID --outcome confirmed_absent` and retrying the same intent. Otherwise record `--outcome uncertain` and report the blocker; do not create a duplicate.
+If creation is uncertain, find the existing task rather than creating another. Record `schedule-creation-result ACCOUNT_ID --intent-id ID --outcome uncertain`; use `confirmed_absent` only after establishing absence.
 
-Confirm the schedule before Day 1 when unattended execution was selected. If the actual browsing date changes, reconcile the same task with the new eligibility date. The helper's `first_run_at` is intended timing, not proof that the scheduler accepted it. Ambiguous DST times use the first occurrence; nonexistent local times are rejected.
+## Resume instruction and manual fallback
 
-## Resume instruction
+Give the scheduled runner this instruction with resolved paths:
 
-Replace placeholders with actual values. Do not include credentials:
+> Read ABSOLUTE_SKILL_PATH/SKILL.md and resume ACCOUNT_ID from ABSOLUTE_STATE_PATH on the original computer. Reconcile saved progress with the live browser, then perform only the next requested step after its eligible date. Preserve the profile, allowlist, SMS limits, and existing authorization. If complete, do only pending schedule cleanup. Report only completion, failure, or required user action.
 
-> Read ABSOLUTE_SKILL_PATH/SKILL.md and resume account ACCOUNT_ID from ABSOLUTE_STATE_PATH on the original computer. Inspect saved progress and the live browser before acting. Do not start Day 2 before its saved eligible date. Perform only the next unfinished authorized step, preserving the original profile, product allowlist, one-time SMS mode, spending cap, and attempt limits. If already complete, do only any pending scheduler cleanup. If required input or capability is missing, stop and report the specific action needed. Avoid repeated unchanged notifications; report completion, failure, or required user action.
+Without a usable scheduler, leave `schedule` empty, save Day 1, and provide this dated resume instruction once. Do not stay running overnight or describe a reminder as automatic execution.
 
-## Manual fallback
+Resume a resolved blocker under the existing full-run authorization. Preserve an explicit user pause or cancellation; if its reason is unknown, clarify before reactivation. Do not repeat authorization requests for an unchanged workflow.
 
-Leave `schedule` empty when none has been created. Complete and save Day 1 normally, then give the user the resume instruction above with the eligible local date and timezone. On or after that date, they can supply it to a computer-using agent with access to the same files and browser profile. Do not manufacture a session/task ID, mark a nonexistent schedule active, or stay running overnight. A reminder may tell the user to invoke the agent, but must not be described as running the workflow automatically.
+## Pause and cleanup
 
-## Resume, pause, and cleanup
+If unattended execution is blocked, pause its task when supported and record the result; an already-ended one-time task may need no pause. Avoid repeated unchanged notifications.
 
-On resumption, read `status`. If complete, clean up only. If too early, take no account action. If Day 1 was interrupted, reconcile its timer and cart; otherwise continue the next eligible phase. Saved files allow resumption even with a fresh conversation or a different compatible agent. They do not grant new purchasing authority or reset counters.
-
-If unattended execution is blocked, disable/pause the exact task using its scheduler, record the confirmed result, and report the specific missing input or capability once. For a one-time task that already ended, inspect its actual status rather than claiming it was paused. Resume or reschedule only after the blocker is resolved and the user authorizes continuation.
-
-For pause, resume, or removal, record intent before changing the scheduler:
+For pause, resume, or removal, record intent first:
 
 ```text
 PY SKILL/scripts/workflow.py schedule-action ACCOUNT_ID --automation-id SAVED_TASK_ID --action remove
 ```
 
-Delete that exact task through its scheduler, then confirm deletion or verified absence:
+Perform the action on that exact task through its scheduler, then record confirmed success or uncertainty:
 
 ```text
 PY SKILL/scripts/workflow.py schedule-result ACCOUNT_ID --automation-id SAVED_TASK_ID --action remove --outcome confirmed
 ```
 
-Use the same pattern with `pause` or `resume` when the scheduler supports it. Preserve unrelated settings and tasks. Use `--outcome uncertain` after ambiguous results and inspect the scheduler before retrying. Local bookkeeping commands never change an external schedule.
+Use `pause` / `resume` as applicable, or `--outcome uncertain` after an ambiguous result. Inspect the scheduler before retrying.
 
-Completion preserves the account's `complete` phase and flags any existing schedule for removal. A failed cleanup never justifies repeating browser work. A lost creation result still needs reconciliation even if no task ID was saved. Manual runs with no schedule have nothing to remove. Never delete the account state, inbox, browser profile, or credentials as scheduler cleanup.
+After completion remove the saved schedule, preserving account state, profile, inbox, and credentials. A failed cleanup leaves the account complete and cleanup pending; retry only cleanup. A lost creation result still needs reconciliation even without a saved task ID.

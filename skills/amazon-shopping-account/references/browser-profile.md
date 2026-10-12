@@ -1,20 +1,15 @@
-# Dedicated persistent Chrome session
+# Dedicated persistent browser profile
 
-The helper creates `chrome-data` inside the account directory, separate from personal Chrome data. This is browser-data separation, not a VM, a different network identity, or protection from another process running as the same OS user.
+Use `workflow.py profile ACCOUNT_ID` to obtain the user-data directory, expected Profile Path, and launch arguments. Use `workflow.py launch ACCOUNT_ID` to open the dedicated browser; retain the returned launcher for reopening it. The helpers handle platform paths and launch formats. Supply `--browser-path ABSOLUTE_EXECUTABLE_PATH` only for an observed executable outside discovery.
 
-1. Run `workflow.py profile ACCOUNT_ID` to obtain the exact user-data directory and launch arguments. Never substitute the default Chrome profile or copy existing cookies.
-2. Run `workflow.py launch ACCOUNT_ID`; it detects Windows, macOS, or Linux, locates installed Chrome (or Chromium on Linux), and opens `chrome://version` with the dedicated `--user-data-dir`. It creates `open-browser.cmd` on Windows, executable `open-browser.command` on macOS, or executable `open-browser.sh` on Linux. Use the returned shortcut path, never an assumed path. For a browser outside discovered locations, use `launch ACCOUNT_ID --browser-path ABSOLUTE_EXECUTABLE_PATH` with its observed location; do not open the personal profile as a fallback.
-3. Use the browser or computer-control tools available to this agent on the detected OS. Mouse/keyboard control and screenshots are sufficient if they let you identify and operate this exact Chrome instance; a browser integration is optional. Select a uniquely observed window. If browser integration cannot attach, check available native computer controls before declaring a blocker. Follow each tool's documented connection and permission requirements; do not silently switch to its personal/default profile. If neither supported path can control the dedicated profile, report exactly which capability is missing and what was tried. A working Chrome launcher alone does not imply working browser automation. Credential-form availability is a separate check and must not stop this verification.
-4. Read Profile Path on `chrome://version`. It must equal `chrome-data/Default` for this account (canonical path aliases are acceptable). Run `workflow.py verify-profile ACCOUNT_ID --observed-path EXACT_OBSERVED_PATH`. This records the observation; the command cannot inspect the browser for you.
-5. Keep this profile signed out of Chrome Sync, with no personal-data import. On Day 1 confirm Amazon is signed out. Before Day 2 resume, inspect whether signup already succeeded to avoid duplicate submission.
+Use whichever supported browser or native computer controls can operate this exact instance. If the helper launcher is unavailable, an existing browser-control service may launch with the returned user-data directory and arguments. Try suitable available controls before reporting a missing capability.
 
-Do not launch two independent automation owners against the same directory. If Chrome is already running there, attach to that exact observed instance. The helper's file lock serializes state commands; it is not a lock over the whole UI session. Coordinate one owner per account.
+Read Profile Path at `chrome://version` and record it with `workflow.py verify-profile ACCOUNT_ID --observed-path EXACT_OBSERVED_PATH`. It must match this account's `chrome-data/Default`; canonical path aliases are acceptable. A launcher result or old verification flag does not establish current browser control.
 
-On Linux, the launcher needs an existing X11 or Wayland session, including a usable virtual display. A shell-only machine is not enough for this launcher. An existing browser-control service may instead start or attach to a browser with the exact arguments returned by `profile`; verify its live Profile Path before acting. Do not silently attach to its default profile. If the browser reports sandbox or permission failures, use a supported environment rather than disabling its sandbox.
+Attach to an existing instance using this directory rather than opening concurrent owners. Keep Chrome Sync off and do not import personal cookies. Confirm Amazon is signed out for Day 1; inspect current sign-in state before Day 2 submission.
 
-The returned platform-specific shortcut reopens the same profile. On macOS it launches Chrome directly, avoiding an already-running default instance ignoring the custom profile arguments. Do not clear cookies, delete the directory, install fingerprint-altering extensions, or modify proxies as part of this workflow.
+Keep the profile and state on the original persistent computer through both days. Do not clear cookies or change proxies/extensions as part of setup. Profile separation does not isolate data from other processes running as the same OS user.
 
-Sources checked 2026-10-12:
-- https://www.chromium.org/developers/creating-and-using-profiles/
+References:
 - https://chromium.googlesource.com/chromium/src/+/HEAD/docs/user_data_dir.md
-- https://support.google.com/chrome/answer/2364824
+- https://www.chromium.org/developers/creating-and-using-profiles/
