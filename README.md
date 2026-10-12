@@ -26,7 +26,7 @@ Select the appropriate agent when prompted. Omit `--global` for a project-local 
 
 ### Copy-and-paste setup instruction
 
-> Download and extract https://github.com/dropshipcalendar/amazon-shopping-skills, or use your compatible skill installer to install its amazon-shopping-account skill. Read skills/amazon-shopping-account/SKILL.md from the complete local folder. Use your available computer and terminal tools to check prerequisites and help configure the required runtime and credentials securely. Do not start browsing, create accounts or inboxes, allocate phone numbers, or schedule anything until I explicitly ask.
+> Download and extract https://github.com/dropshipcalendar/amazon-shopping-skills, or use your compatible skill installer to install its amazon-shopping-account skill. Use only one installation method and keep its supporting files together. Read skills/amazon-shopping-account/SKILL.md and follow private setup. Prepare shopping-01 with visible Amazon.com defaults and my detected timezone, preserving any existing account. Check prerequisites, open the private configuration window (or provide the resolved interactive setup command), and verify the dedicated Chrome profile and signed-out browser access. Report Day 1 ready only after those checks; missing Day 2 credentials must not block preparation. Enable one-time SMS by default and let me accept a total spending limit privately. Never request secrets in chat. Do not begin timed browsing, create an Amazon account or inbox, allocate a phone number, or schedule anything until I ask.
 
 ## Required computer capabilities
 
@@ -38,7 +38,7 @@ Select the appropriate agent when prompted. Omit `--global` for a project-local 
 
 Follow [platform setup](skills/amazon-shopping-account/references/platform.md) to create a private Python environment with the pinned [requirements](skills/amazon-shopping-account/scripts/requirements.txt). Resolve the installed skill's actual path on the recipient's computer.
 
-Credentials are read from `AGENTMAIL_API_KEY`, `TEXTVERIFIED_API_KEY`, and `TEXTVERIFIED_API_USERNAME`. Follow [credential setup](skills/amazon-shopping-account/references/credentials.md) to provide them privately. Never paste secrets into chat, commit them, or put them in command arguments. An existing secret manager must inject the values into the actual helper process; merely saving a key in an OS vault is insufficient. Missing credentials are a setup requirement, not permission to provision another provider account.
+Follow [private setup](skills/amazon-shopping-account/references/setup.md) for a local configuration form or hidden interactive terminal prompts. Settings and browser data remain outside the skill. Optional provider credentials are stored in supported native OS storage (Windows Credential Manager, macOS Keychain, or Linux Secret Service/KWallet) and retrieved by each provider helper; existing approved environment injection remains supported. Never paste secrets into chat, commit them, or put them in command arguments. Missing Day 2 credentials do not block Day 1 preparation and do not authorize provisioning another provider account. SMS is enabled by default, but a user-approved positive total cap is required before a one-time allocation.
 
 ## How the two days continue
 
