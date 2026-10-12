@@ -15,6 +15,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import credential_store as store
 import providers
+import setup_ui
 import workflow
 
 spec = importlib.util.spec_from_file_location("shopping_setup", Path(__file__).resolve().parents[1] / "scripts/setup.py")
@@ -78,6 +79,25 @@ class SetupTests(unittest.TestCase):
         self.assertIsNotNone(result["setup_saved_at"])
         self.assertIsNone(self.account.state["inbox"])
         self.assertIsNone(self.account.state["schedule"])
+
+    def test_minimal_form_saves_only_filled_credentials_and_preserves_settings(self):
+        setup.save_settings(self.account, {"sms_enabled": False, "sms_max_total_usd": "2.50"}, approve_sms_budget=True)
+        store.save(self.account, {store.NAMES[0]: "old", store.NAMES[1]: "retained"})
+        before = dict(self.account.config)
+        fields = {name: Mock(get=Mock(return_value=value)) for name, value in
+                  zip(store.NAMES, ("new", "", "test-user"))}
+        setup_ui.save_credentials(self.account, fields, setup.save_settings)
+        self.assertEqual(self.account.config, before)
+        self.assertEqual(store.read(self.account, store.NAMES[0]), "new")
+        self.assertEqual(store.read(self.account, store.NAMES[1]), "retained")
+        self.assertEqual(store.read(self.account, store.NAMES[2]), "test-user")
+
+    def test_blank_minimal_form_does_not_approve_spending(self):
+        fields = {name: Mock(get=Mock(return_value="")) for name in store.NAMES}
+        setup_ui.save_credentials(self.account, fields, setup.save_settings)
+        self.assertTrue(self.account.config["sms_enabled"])
+        self.assertIsNone(self.account.config["sms_max_total_usd"])
+        self.assertFalse(self.backend.values)
 
     def test_budget_requires_acceptance_before_any_secret_write(self):
         with self.assertRaisesRegex(workflow.WorkflowError, "Accept"):
