@@ -30,8 +30,6 @@ open-browser.command
 # Optional local installer/runtime artifacts
 node_modules/
 .agents/
-.claude/
-.codex/
 skills-lock.json
 
 # OS-generated files

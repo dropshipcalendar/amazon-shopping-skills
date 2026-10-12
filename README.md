@@ -1,81 +1,64 @@
 # Amazon Shopping Account skill
 
-A reusable agent skill for one user-owned Amazon shopping account. Day 1 browses the bundled 50-product allowlist while signed out for five minutes and adds at most two matching products to the cart. Day 2 registers the account in the same dedicated Chrome profile, using AgentMail and, only when requested by Amazon, one-time TextVerified SMS. It does not place orders.
+Instructions and local helpers for a computer-using AI agent to set up one user-owned Amazon shopping account across two days. Day 1 browses the bundled product allowlist while signed out for five minutes and adds at most two matching products to the cart. Day 2 registers the account in the same dedicated Chrome profile, using AgentMail and, only if Amazon requests it, one-time TextVerified SMS. The workflow does not place orders.
 
-This repository distributes a standalone skill through `npx skills add`. No plugin marketplace or custom npm package is required. The `skills` npm package is the installer; this repository contains the skill it installs.
+No particular agent application, plugin marketplace, or skill loader is required. The agent needs access to the complete skill folder and the computer capabilities described below. This repository does not include an agent runtime or hosted signup service.
 
-## Install
+## Get the skill
 
-Repository: [dropshipcalendar/amazon-shopping-skills](https://github.com/dropshipcalendar/amazon-shopping-skills).
+Download this repository with GitHub's **Code -> Download ZIP**, then extract it, or clone it:
 
-Install [Node.js](https://nodejs.org/) with npm/npx. The installer currently requires Node.js 22.20.0 or newer; check its [current requirements](https://github.com/vercel-labs/skills/blob/main/package.json) if installation reports a version mismatch.
+```sh
+git clone https://github.com/dropshipcalendar/amazon-shopping-skills.git
+```
 
-Run this in a terminal, then select your agent:
+Give your agent access to the extracted folder and have it read [skills/amazon-shopping-account/SKILL.md](skills/amazon-shopping-account/SKILL.md). Keep the whole folder together: the skill needs its scripts, references, and product allowlist. Reading only the raw SKILL.md from the web is not a complete installation.
+
+### Optional skill-manager installation
+
+If your agent has a compatible skill manager and Node.js with npm/npx is available:
 
 ```sh
 npx skills add dropshipcalendar/amazon-shopping-skills --skill amazon-shopping-account --global
 ```
 
-Alternatively, target Codex directly:
+Select the appropriate agent when prompted. Omit `--global` for a project-local installation; add `--copy` if symbolic links are unavailable. The installer currently requires Node.js 22.20.0 or newer; see its [current requirements](https://github.com/vercel-labs/skills/blob/main/package.json) and [installation options](https://github.com/vercel-labs/skills#install-a-skill). Installing the files does not install Python dependencies or run the workflow.
 
-```sh
-npx skills add dropshipcalendar/amazon-shopping-skills --skill amazon-shopping-account --agent codex --global
-```
+### Copy-and-paste setup instruction
 
-Use one installation method. `--global` makes the skill available across projects; omit it for a project-local installation. If symbolic links are unavailable, add `--copy`. See the [installer documentation](https://github.com/vercel-labs/skills#install-a-skill) for supported agents and options.
+> Download and extract https://github.com/dropshipcalendar/amazon-shopping-skills, or use your compatible skill installer to install its amazon-shopping-account skill. Read skills/amazon-shopping-account/SKILL.md from the complete local folder. Use your available computer and terminal tools to check prerequisites and help configure the required runtime and credentials securely. Do not start browsing, create accounts or inboxes, allocate phone numbers, or schedule anything until I explicitly ask.
 
-The same installer supports Claude Code and other agents, but installation support is not execution compatibility. This skill's full two-day scheduling flow currently targets Codex desktop with a same-chat scheduler. Equivalent scheduling and browser tools have not been validated in other agents. Restart the agent if the installed skill does not appear.
+## Required computer capabilities
 
-### Copy-and-paste instruction for an agent
+- Windows or macOS with Google Chrome and Python 3.11 or newer.
+- Browser or mouse/keyboard/screenshot tools that can identify and control a dedicated Chrome profile.
+- Ability to read/write local files and run Python commands, directly or through a terminal window.
+- The user's account name, marketplace, timezone, and secure access to the registration password. Product search names are bundled.
+- AgentMail credentials; TextVerified credentials and an approved spending cap if SMS is needed.
 
-Give your agent this instruction:
+Follow [platform setup](skills/amazon-shopping-account/references/platform.md) to create a private Python environment with the pinned [requirements](skills/amazon-shopping-account/scripts/requirements.txt). Resolve the installed skill's actual path on the recipient's computer.
 
-> Install the Amazon Shopping Account skill by running `npx skills add dropshipcalendar/amazon-shopping-skills --skill amazon-shopping-account --global` and selecting this agent. Read the installed SKILL.md and report missing runtime requirements. Installation only: do not create provider inboxes, allocate phone numbers, launch the Amazon workflow, or create a schedule.
+Credentials are read from `AGENTMAIL_API_KEY`, `TEXTVERIFIED_API_KEY`, and `TEXTVERIFIED_API_USERNAME`. Follow [credential setup](skills/amazon-shopping-account/references/credentials.md) to provide them privately. Never paste secrets into chat, commit them, or put them in command arguments. An existing secret manager must inject the values into the actual helper process; merely saving a key in an OS vault is insufficient. Missing credentials are a setup requirement, not permission to provision another provider account.
 
-## Runtime setup
+## How the two days continue
 
-Installing the skill copies its instructions and supporting files. It does not install its Python dependencies, configure credentials, create an account, or schedule either day.
+Progress lives in local state files, so the agent does not need to remember a previous conversation. See [continuation and scheduling](skills/amazon-shopping-account/references/scheduling.md).
 
-The full workflow needs:
+- **Automatic:** If an available scheduler can resume the agent or invoke a verified agent runner with access to the same files, credentials, and browser profile, the agent records that task's ID and removes it after completion. A timer that only launches a page or runs a helper is insufficient.
+- **Manual:** Without those capabilities, the agent saves Day 1 and provides a dated resume instruction. Give it to a compatible computer-using agent on or after the eligible date. A reminder is not automatic execution.
 
-- Windows or macOS, Google Chrome, and Python 3.11 or newer.
-- A compatible browser-control tool connected to the dedicated Chrome session.
-- Codex desktop's same-chat scheduling capability and a machine/app available when the continuation runs.
-- AgentMail credentials; TextVerified credentials and an explicitly approved spending cap if SMS is needed.
-- The user's account name, a supported marketplace, timezone, desired Day 2 time, and secure access to the registration password. Product names are already bundled.
+Downloading or installing the skill starts neither mode. A later explicit request to run it sets the execution scope. If unattended completion is essential, establish those capabilities before starting. Windows/macOS launcher behavior has offline tests; live browser and scheduler compatibility must be verified in each environment.
 
-Ask the agent to follow [platform setup](skills/amazon-shopping-account/references/platform.md) and create a private Python environment with the pinned [requirements](skills/amazon-shopping-account/scripts/requirements.txt). Use the installed skill's actual path; paths in this repository are not paths on the recipient's computer.
+## Private runtime data
 
-Credential variable names:
+Account state and Chrome profiles are stored outside the skill folder:
 
-| Variable | Used for |
-| --- | --- |
-| `AGENTMAIL_API_KEY` | Email inbox and verification |
-| `TEXTVERIFIED_API_KEY` | Conditional one-time SMS |
-| `TEXTVERIFIED_API_USERNAME` | Conditional one-time SMS |
-
-Follow [credential setup](skills/amazon-shopping-account/references/credentials.md). Supply values privately through an approved secret-manager launcher or local environment; never paste them into chat, commit them, or include them in commands. The helpers do not automatically read Windows Credential Manager or macOS Keychain. Unattended Day 2 requires credentials to reach the actual scheduled process; a one-time hidden terminal prompt is not enough. Missing credentials are a setup requirement, not permission to create another provider account.
-
-The skill keeps account state and Chrome profiles outside its installation directory:
-
-- Windows: `%LOCALAPPDATA%\AmazonShoppingSkill`
+- Windows: `%LOCALAPPDATA%/AmazonShoppingSkill`
 - macOS: `~/Library/Application Support/AmazonShoppingSkill`
 
-Do not publish or share those directories. Each recipient uses their own credentials, account state, profile, and automation ID.
+Do not publish or share those directories. Each user has their own credentials, profile, state, and optional scheduled task. The skill preserves progress and prevents repeating uncertain actions; it cannot guarantee account acceptance by Amazon.
 
-## Use after setup
-
-Invoke `amazon-shopping-account` through your agent's skill selector. In Codex, you can mention `$amazon-shopping-account`.
-
-A setup-only request:
-
-> Use $amazon-shopping-account to check the prerequisites for my computer. Do not start browsing, create accounts, allocate SMS numbers, or schedule anything yet.
-
-A later explicit request to run the full workflow authorizes the skill's two-day flow. The agent obtains missing configuration, verifies browser and credential access, and records the same-chat continuation before starting Day 1. See [the skill](skills/amazon-shopping-account/SKILL.md) and [scheduling details](skills/amazon-shopping-account/references/scheduling.md).
-
-This is local automation guidance, not a hosted signup service. Runtime/browser compatibility and live provider behavior must be verified on the recipient's machine. The bundled offline tests do not establish live Amazon acceptance or Mac browser-control availability.
-
-## Repository contents
+## Repository layout
 
 ```text
 amazon-shopping-skills/
@@ -84,43 +67,26 @@ amazon-shopping-skills/
 └── skills/
     └── amazon-shopping-account/
         ├── SKILL.md
-        ├── agents/openai.yaml
         ├── assets/
         ├── references/
         ├── scripts/
         └── tests/
 ```
 
-Keep the whole skill folder together. Installing only the raw `SKILL.md` would omit the required helpers and product allowlist. The skill's `name` remains `amazon-shopping-account`, matching the `--skill` argument.
+## Maintenance and validation
 
-## Maintainer checks before publishing
+With the requirements installed in a private Python environment, run:
 
-1. Confirm the repository identity and review licensing before each release. This repository does not currently include a license file.
-2. Review the files for credentials, account records, browser data, and personal paths. Ignore rules are a backstop, not a replacement for review.
-3. Run the offline tests using a Python environment with `skills/amazon-shopping-account/scripts/requirements.txt` installed:
+```sh
+python -m unittest discover -s skills/amazon-shopping-account/tests -v
+```
 
-   ```sh
-   python -m unittest discover -s skills/amazon-shopping-account/tests -v
-   ```
+Use that environment's interpreter path or `python3` where appropriate. Tests use temporary state and fake providers/schedulers, not live account creation.
 
-   On macOS, use the selected Python interpreter's path or `python3` if appropriate. Tests use temporary state and fake providers/scheduler responses; they do not perform the live workflow.
+To check discovery without installing the skill, optionally run:
 
-4. To inspect local skill discovery without installing this skill, run from this repository root:
+```sh
+npx skills add dropshipcalendar/amazon-shopping-skills --list
+```
 
-   ```sh
-   npx skills add . --list
-   ```
-
-   This may download and execute the installer itself; it does not run the Amazon workflow.
-
-5. After publication, check discovery through the real repository URL with `--list`, then test installation in a clean recipient environment. Validate Windows and macOS browser/scheduling behavior separately before claiming support.
-
-The copy in this repository is a distribution snapshot. Edits to an already installed personal copy do not automatically update it; keep the repository version current before releasing updates.
-
-## Sources
-
-- [Skills installer: commands, scopes, and supported agents](https://github.com/vercel-labs/skills)
-- [Installer Node.js requirement](https://github.com/vercel-labs/skills/blob/main/package.json)
-- [OpenAI: build and distribute skills](https://learn.chatgpt.com/docs/build-skills)
-
-Installation documentation checked on 2026-10-12.
+This may download and execute the installer itself; it does not run the Amazon workflow. Before releases, review private-data exclusions and links, test in recipient environments, and review licensing. This repository does not currently include a license file. Edits to a separately installed copy do not update this repository automatically.
