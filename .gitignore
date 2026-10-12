@@ -25,6 +25,7 @@ state.json
 config.json
 open-browser.cmd
 open-browser.command
+open-browser.sh
 *.log
 
 # Optional local installer/runtime artifacts

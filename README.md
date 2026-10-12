@@ -30,7 +30,7 @@ Select the appropriate agent when prompted. Omit `--global` for a project-local 
 
 ## Required computer capabilities
 
-- Windows or macOS with Google Chrome and Python 3.11 or newer.
+- Windows, macOS, or Linux with Python 3.11 or newer and Google Chrome (or Chromium on Linux). Linux needs a controllable browser session: an existing graphical/virtual display or a compatible browser-control service.
 - Browser or mouse/keyboard/screenshot tools that can identify and control a dedicated Chrome profile.
 - Ability to read/write local files and run Python commands, directly or through a terminal window.
 - The user's account name, marketplace, timezone, and secure access to the registration password. Product search names are bundled.
@@ -47,7 +47,7 @@ Progress lives in local state files, so the agent does not need to remember a pr
 - **Automatic:** If an available scheduler can resume the agent or invoke a verified agent runner with access to the same files, credentials, and browser profile, the agent records that task's ID and removes it after completion. A timer that only launches a page or runs a helper is insufficient.
 - **Manual:** Without those capabilities, the agent saves Day 1 and provides a dated resume instruction. Give it to a compatible computer-using agent on or after the eligible date. A reminder is not automatic execution.
 
-Downloading or installing the skill starts neither mode. A later explicit request to run it sets the execution scope. If unattended completion is essential, establish those capabilities before starting. Windows/macOS launcher behavior has offline tests; live browser and scheduler compatibility must be verified in each environment.
+Downloading or installing the skill starts neither mode. A later explicit request to run it sets the execution scope. If unattended completion is essential, establish those capabilities before starting. The selected computer must retain its account data and browser profile through Day 2, including across cloud restarts. Prefer the current computer when its capabilities are sufficient; Linux alone is not a reason to switch to a connected laptop. Platform launcher behavior has offline tests; live browser and scheduler compatibility must be verified in each environment.
 
 ## Private runtime data
 
@@ -55,6 +55,7 @@ Account state and Chrome profiles are stored outside the skill folder:
 
 - Windows: `%LOCALAPPDATA%/AmazonShoppingSkill`
 - macOS: `~/Library/Application Support/AmazonShoppingSkill`
+- Linux: `$XDG_DATA_HOME/AmazonShoppingSkill`, or `~/.local/share/AmazonShoppingSkill` when that variable is absent, empty, or relative. Use verified persistent storage for cloud runs.
 
 Do not publish or share those directories. Each user has their own credentials, profile, state, and optional scheduled task. The skill preserves progress and prevents repeating uncertain actions; it cannot guarantee account acceptance by Amazon.
 
