@@ -1,6 +1,0 @@
-interface:
-  display_name: "Amazon Shopping Account"
-  short_description: "Two-day setup in a dedicated Chrome profile"
-  default_prompt: "Use $amazon-shopping-account to prepare or resume my two-day Amazon shopping account workflow."
-policy:
-  allow_implicit_invocation: true
