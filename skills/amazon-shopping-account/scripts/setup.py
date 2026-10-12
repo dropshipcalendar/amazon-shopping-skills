@@ -144,65 +144,8 @@ def terminal_setup(account):
 
 
 def gui_setup(account):
-    # Import lazily: Tk is not bundled with every Python distribution.
-    try:
-        import tkinter as tk
-        from tkinter import ttk, messagebox
-        window = tk.Tk()
-    except Exception:
-        raise WorkflowError("Local setup window unavailable; run setup.py configure ACCOUNT_ID --prompt in your own terminal") from None
-    window.title("Amazon shopping — private setup")
-    window.resizable(True, False)
-    frame = ttk.Frame(window, padding=20)
-    frame.grid(sticky="nsew")
-    frame.columnconfigure(1, weight=1)
-    ttk.Label(frame, text=f"Account: {account.account_id}", font=("TkDefaultFont", 13, "bold")).grid(row=0, columnspan=2, sticky="w")
-    ttk.Label(frame, text="Day 1: browse for five minutes when authorized. Day 2: register and verify in the same profile on the next eligible day. Credentials can be configured now or before Day 2.", wraplength=580).grid(row=1, columnspan=2, sticky="w", pady=(6, 14))
-    fields = {}
-    for row, (key, label) in enumerate((("marketplace", "Marketplace URL"), ("timezone", "IANA timezone"), ("sms_max_total_usd", "Total SMS limit (USD)")), 2):
-        ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", padx=(0, 12), pady=4)
-        fields[key] = tk.StringVar(value=str(account.config[key] or ""))
-        ttk.Entry(frame, textvariable=fields[key], width=46).grid(row=row, column=1, sticky="ew")
-    sms = tk.BooleanVar(value=account.config["sms_enabled"])
-    approve = tk.BooleanVar(value=False)
-    ttk.Checkbutton(frame, text="Enable one-time SMS when Amazon requires it", variable=sms).grid(row=5, columnspan=2, sticky="w", pady=(10, 3))
-    ttk.Label(frame, text=f"Allocation limit: {account.config['sms_max_allocations']}. Blank budget means no spending approved.").grid(row=6, columnspan=2, sticky="w")
-    ttk.Checkbutton(frame, text="I approve the total SMS spending limit entered above", variable=approve).grid(row=7, columnspan=2, sticky="w", pady=4)
-    ttk.Label(frame, text="Optional credentials — saved in your OS credential store. Blank preserves existing values.", wraplength=580).grid(row=8, columnspan=2, sticky="w", pady=(14, 6))
-    secret_fields = {}
-    for row, name in enumerate(credential_store.NAMES, 9):
-        ttk.Label(frame, text=name).grid(row=row, column=0, sticky="w", padx=(0, 12), pady=4)
-        secret_fields[name] = tk.StringVar()
-        ttk.Entry(frame, textvariable=secret_fields[name], show="*", width=46).grid(row=row, column=1, sticky="ew")
-    replace = tk.BooleanVar(value=False)
-    ttk.Checkbutton(frame, text="Replace existing credentials for fields I filled in", variable=replace).grid(row=12, columnspan=2, sticky="w", pady=4)
-    ttk.Label(frame, text="No Amazon password is collected. Saving creates no inbox, phone number, or schedule.", wraplength=580).grid(row=13, columnspan=2, sticky="w", pady=(10, 6))
-    outcome = tk.StringVar(value="Settings prepared. Your agent must verify the live browser before reporting Day 1 ready.")
-    ttk.Label(frame, textvariable=outcome, wraplength=580).grid(row=14, columnspan=2, sticky="w", pady=6)
-
-    def save():
-        credentials = {name: value.get() for name, value in secret_fields.items() if value.get()}
-        try:
-            settings = {name: field.get().strip() for name, field in fields.items()}
-            settings["sms_max_total_usd"] = settings["sms_max_total_usd"] or None
-            settings["sms_enabled"] = sms.get()
-            save_settings(account, settings, credentials, approve.get(), replace.get())
-            for field in secret_fields.values():
-                field.set("")
-            outcome.set("Configuration saved. Credentials entered were saved securely; provider connection not tested. Return to the agent and say 'configured'.")
-            messagebox.showinfo("Saved", "Configuration saved. Return to the agent and say 'configured'.", parent=window)
-        except WorkflowError as exc:
-            messagebox.showerror("Setup needs attention", str(exc), parent=window)
-        except Exception:
-            messagebox.showerror("Setup needs attention", "Setup could not finish. No secret values were logged. Check the native credential store and saved configuration before retrying.", parent=window)
-        finally:
-            credentials.clear()
-
-    buttons = ttk.Frame(frame)
-    buttons.grid(row=15, columnspan=2, sticky="e", pady=(10, 0))
-    ttk.Button(buttons, text="Save settings and SMS limit", command=save).pack(side="left", padx=5)
-    ttk.Button(buttons, text="Close / configure credentials later", command=window.destroy).pack(side="left", padx=5)
-    window.mainloop()
+    from setup_ui import show_setup
+    show_setup(account, save_settings)
 
 
 def launch_setup(account):
