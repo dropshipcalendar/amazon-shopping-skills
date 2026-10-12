@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -135,6 +136,73 @@ class WorkflowTests(unittest.TestCase):
         # A stale Windows environment variable must not override Mac paths.
         self.assertEqual(workflow.data_directory("darwin", {"LOCALAPPDATA": str(local)}, home), home / "Library/Application Support/AmazonShoppingSkill")
 
+    def test_linux_data_directory_obeys_absolute_xdg_path_and_ignores_relative(self):
+        home = Path(self.tmp.name) / "Linux Home"
+        custom = Path(self.tmp.name) / "Persistent Data"
+        for environment in ({}, {"XDG_DATA_HOME": ""}, {"XDG_DATA_HOME": "relative/path"}):
+            self.assertEqual(workflow.data_directory("linux", environment, home), home / ".local/share/AmazonShoppingSkill")
+        self.assertEqual(workflow.data_directory("linux", {"XDG_DATA_HOME": str(custom)}, home), custom / "AmazonShoppingSkill")
+        with self.assertRaises(WorkflowError): workflow.data_directory("unknown", {}, home)
+
+    def test_linux_environment_reports_runtime_and_display_without_creating_files(self):
+        home = Path(self.tmp.name) / "Linux Home"
+        with patch.object(workflow.sys, "platform", "linux"), patch.object(Path, "home", return_value=home), patch.dict(os.environ, {"DISPLAY": ":test"}, clear=True):
+            report = workflow.environment_info()
+        self.assertEqual(Path(report["runtime_python"]), home / ".local/share/AmazonShoppingSkill/runtime/bin/python")
+        self.assertTrue(report["graphical_session_available"])
+        self.assertFalse(home.exists())
+
+    def test_linux_browser_discovery_uses_path_and_deduplicates(self):
+        locations = {"google-chrome-stable": "/usr/bin/google-chrome-stable", "chromium": "/custom/bin/chromium"}
+        with patch.object(workflow.shutil, "which", side_effect=lambda name, path: locations.get(name)) as find:
+            candidates = workflow.chrome_candidates("linux", {"PATH": "/custom/bin"})
+        self.assertEqual(candidates[:2], [Path("/usr/bin/google-chrome-stable"), Path("/custom/bin/chromium")])
+        self.assertEqual(candidates.count(Path("/usr/bin/google-chrome-stable")), 1)
+        self.assertTrue(all(call.kwargs["path"] == "/custom/bin" for call in find.call_args_list))
+
+    def test_linux_launcher_is_executable_and_quotes_arguments(self):
+        argv = ["/opt/Browser With Spaces/chrome", "--user-data-dir=/home/O'Neil/$(unsafe);data", "chrome://version"]
+        with patch.object(Path, "chmod", autospec=True) as chmod:
+            launcher = workflow.write_browser_launcher(self.a.path, argv, "linux")
+        content = launcher.read_bytes()
+        self.assertEqual(launcher.name, "open-browser.sh")
+        self.assertNotIn(b"\r\n", content)
+        self.assertEqual(shlex.split(content.decode().splitlines()[1][len("exec "):]), argv)
+        self.assertEqual(chmod.call_args.args[1], 0o700)
+
+    @unittest.skipUnless(sys.platform == "linux", "Execute the shell launcher on Linux only")
+    def test_linux_launcher_executes_literal_arguments(self):
+        output = self.a.path / "literal-arguments.json"
+        script = self.a.path / "argument recorder.py"
+        script.write_text("import json, pathlib, sys\npathlib.Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:]))\n", encoding="utf-8")
+        arguments = ["a b", "O'Neil", "$(touch SHOULD_NOT_EXIST)", "; echo literal"]
+        launcher = workflow.write_browser_launcher(self.a.path, [sys.executable, str(script), str(output), *arguments], "linux")
+        subprocess.run([str(launcher)], check=True, cwd=self.a.path, capture_output=True)
+        self.assertEqual(json.loads(output.read_text()), arguments)
+        self.assertFalse((self.a.path / "SHOULD_NOT_EXIST").exists())
+
+    def test_linux_without_display_does_not_spawn_or_change_profile_proof(self):
+        self.a.state["profile_verified_at"] = "existing-proof"
+        with patch.object(workflow.sys, "platform", "linux"), patch.dict(os.environ, {}, clear=True), patch.object(workflow.subprocess, "Popen") as spawn:
+            with self.assertRaisesRegex(WorkflowError, "graphical session"): self.a.launch()
+        spawn.assert_not_called()
+        self.assertEqual(self.a.state["profile_verified_at"], "existing-proof")
+
+    def test_explicit_browser_path_is_validated_and_does_not_fall_back(self):
+        browser = self.a.path / "custom-browser"
+        browser.touch()
+        with patch.object(workflow.sys, "platform", "linux"), patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-test"}, clear=True), patch.object(workflow.subprocess, "Popen") as spawn, patch.object(workflow, "chrome_candidates") as discover:
+            with self.assertRaisesRegex(WorkflowError, "absolute"): self.a.launch("relative-browser")
+            with patch.object(workflow.os, "access", return_value=False):
+                with self.assertRaisesRegex(WorkflowError, "No executable"): self.a.launch(str(browser))
+            discover.assert_not_called()
+            spawn.assert_not_called()
+            with patch.object(workflow.os, "access", return_value=True), patch.object(Path, "chmod", autospec=True):
+                result = self.a.launch(str(browser))
+            self.assertTrue(result["shortcut"].endswith(".sh"))
+            self.assertEqual(spawn.call_args.args[0][0], str(browser))
+            self.assertFalse(any(arg in ("--no-sandbox", "--disable-web-security", "--headless") for arg in spawn.call_args.args[0]))
+
     def test_environment_report_resolves_mac_runtime_without_creating_files(self):
         home = Path(self.tmp.name) / "Mac Home"
         with patch.object(workflow.sys, "platform", "darwin"), patch.object(Path, "home", return_value=home):
@@ -170,7 +238,7 @@ class WorkflowTests(unittest.TestCase):
     def test_launch_uses_platform_shortcut_and_invalidates_profile_before_spawn(self):
         chrome = Path(self.tmp.name) / "Chrome With Spaces"
         chrome.touch()
-        for platform, suffix in (("win32", ".cmd"), ("darwin", ".command")):
+        for platform, suffix in (("win32", ".cmd"), ("darwin", ".command"), ("linux", ".sh")):
             self.a.state["profile_verified_at"] = "previous-session"
             self.a.save()
             def check_launch(argv, **kwargs):
@@ -179,7 +247,7 @@ class WorkflowTests(unittest.TestCase):
                 self.assertEqual(argv[0], str(chrome))
                 self.assertIn("--user-data-dir=" + str(self.a.path / "chrome-data"), argv)
                 self.assertNotIn("shell", kwargs)
-            with patch.object(workflow.sys, "platform", platform), patch.object(workflow, "chrome_candidates", return_value=[chrome]), patch.object(workflow.subprocess, "Popen", side_effect=check_launch), patch.object(Path, "chmod", autospec=True):
+            with patch.object(workflow.sys, "platform", platform), patch.dict(os.environ, {"DISPLAY": ":test"}), patch.object(workflow.os, "access", return_value=True), patch.object(workflow, "chrome_candidates", return_value=[chrome]), patch.object(workflow.subprocess, "Popen", side_effect=check_launch), patch.object(Path, "chmod", autospec=True):
                 result = self.a.launch()
             self.assertTrue(result["shortcut"].endswith(suffix))
 
