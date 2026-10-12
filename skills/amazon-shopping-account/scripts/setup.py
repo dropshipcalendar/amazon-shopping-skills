@@ -6,9 +6,13 @@ import getpass
 import json
 import os
 from pathlib import Path
+import queue
+import re
 import shlex
 import subprocess
 import sys
+import threading
+from urllib.parse import urlsplit
 import warnings
 from zoneinfo import ZoneInfo
 
@@ -143,30 +147,40 @@ def terminal_setup(account):
     print(json.dumps(result, ensure_ascii=False))
 
 
-def gui_setup(account):
+def gui_setup(account, open_browser=True):
     from setup_ui import show_setup
-    show_setup(account, save_settings)
+    show_setup(account, save_settings, open_browser=open_browser,
+               ready=lambda result: print(json.dumps(result), flush=True))
 
 
 def launch_setup(account):
-    argv = [sys.executable, str(Path(__file__).resolve()), "--root", str(account.root), "open", account.account_id]
-    kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "stdin": subprocess.DEVNULL}
+    argv = [sys.executable, str(Path(__file__).resolve()), "--root", str(account.root), "serve", account.account_id]
+    kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.DEVNULL, "stdin": subprocess.DEVNULL, "text": True}
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
     child = subprocess.Popen(argv, **kwargs)
+    ready = queue.Queue(maxsize=1)
+    threading.Thread(target=lambda: ready.put(child.stdout.readline(2048)), daemon=True).start()
     try:
-        code = child.wait(timeout=2)
-    except subprocess.TimeoutExpired:
-        return {"status": "setup_window_requested", "pid": child.pid, "instruction": "Save privately, then tell the agent 'configured'."}
-    if code:
-        raise WorkflowError("Setup window could not open; use the saved launcher or configure --prompt in your own terminal")
-    return {"status": "setup_window_closed", "instruction": "Check setup status to see whether settings were saved."}
+        result = json.loads(ready.get(timeout=10))
+        url = urlsplit(result["setup_url"])
+        if url.scheme != "http" or url.hostname != "127.0.0.1" or not url.port or url.path != "/" or url.query or not re.fullmatch(r"[A-Za-z0-9_-]{43}", url.fragment):
+            raise ValueError("Invalid setup endpoint")
+    except (queue.Empty, ValueError, KeyError, TypeError):
+        if child.poll() is None:
+            child.terminate()
+        child.wait(timeout=5)
+        raise WorkflowError("Local setup could not start; use the saved launcher or configure --prompt in your own terminal") from None
+    finally:
+        child.stdout.close()
+    return {"status": "setup_server_ready", "pid": child.pid, **result,
+            "instruction": "Open setup_url on this computer; stop observing before private entry. Save, then tell the agent 'configured'."}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", help="Alternate accounts directory")
-    parser.add_argument("command", choices=("prepare", "status", "open", "launch", "configure", "harden-credentials"))
+    parser.add_argument("command", choices=("prepare", "status", "open", "serve", "launch", "configure", "harden-credentials"))
     parser.add_argument("account_id", nargs="?", default="shopping-01")
     parser.add_argument("--marketplace")
     parser.add_argument("--timezone")
@@ -186,8 +200,8 @@ def main():
                     result = credential_store.harden_windows(account)
                 print(json.dumps(result))
                 return 0
-            if args.command == "open":
-                gui_setup(account)
+            if args.command in ("open", "serve"):
+                gui_setup(account, open_browser=args.command == "open")
                 return 0
             if args.command == "configure":
                 if not args.prompt:
