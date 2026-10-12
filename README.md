@@ -22,11 +22,11 @@ If your agent has a compatible skill manager and Node.js with npm/npx is availab
 npx skills add dropshipcalendar/amazon-shopping-skills --skill amazon-shopping-account --global
 ```
 
-Select only the current agent's supported destination; do not install into every detected agent. If this agent has no supported destination, use the complete downloaded folder. Omit `--global` for a project-local installation; add `--copy` if symbolic links are unavailable. See the installer's [current requirements](https://github.com/vercel-labs/skills/blob/main/package.json) and [installation options](https://github.com/vercel-labs/skills#install-a-skill). The installer copies files; the instruction below also requests initial setup.
+Select only the current agent's supported destination; do not install into every detected agent. If this agent has no supported destination, use the complete downloaded folder. Omit `--global` for a project-local installation; add `--copy` if symbolic links are unavailable. See the installer's [current requirements](https://github.com/vercel-labs/skills/blob/main/package.json) and [installation options](https://github.com/vercel-labs/skills#install-a-skill). The installer copies files; the instruction below also authorizes setup and the two-day workflow.
 
-### Copy-and-paste setup instruction
+### Copy-and-paste installation and run instruction
 
-> Install with `npx skills add dropshipcalendar/amazon-shopping-skills --skill amazon-shopping-account --global` for this agent. Read the installed skill's `SKILL.md` and run initial setup now, in this same turn. Keep replies brief and stop after setup; do not start Amazon browsing, registration, SMS purchases, or scheduling.
+> Install the amazon-shopping-account skill from https://github.com/dropshipcalendar/amazon-shopping-skills. Use `npx skills add dropshipcalendar/amazon-shopping-skills --skill amazon-shopping-account --global` if supported; otherwise download and extract the complete repository. Read the local `skills/amazon-shopping-account/SKILL.md` (or its installed equivalent), complete setup now, and arrange the full two-day workflow: schedule five minutes of browsing for five minutes after setup, then registration at 09:00 on the local calendar day after browsing completes. Reuse saved credentials; sign up for AgentMail only if needed and guide my TextVerified login when necessary. Store credentials securely, check SMS readiness, and ask for any missing spending cap. Use a verified scheduler, save task IDs, remove finished tasks, and report the confirmed timeline briefly. If scheduling is unavailable, tell me and provide the manual next action. Never display secrets or place Amazon orders.
 
 ## Required computer capabilities
 
@@ -42,10 +42,10 @@ Setup checks SMS price and balance against the configured minimum and approved s
 
 Progress lives in local state files, so the agent does not need to remember a previous conversation. See [continuation and scheduling](skills/amazon-shopping-account/references/scheduling.md).
 
-- **Automatic:** If an available scheduler can resume the agent or invoke a verified agent runner with access to the same files, credentials, and browser profile, the agent records that task's ID and removes it after completion. A timer that only launches a page or runs a helper is insufficient.
-- **Manual:** Without those capabilities, the agent saves Day 1 and provides a dated resume instruction. Give it to a compatible computer-using agent on or after the eligible date. A reminder is not automatic execution.
+- **Automatic by default:** After setup, schedule Day 1 five minutes later. Once browsing finishes, remove its task and schedule Day 2 for 09:00 the following local day. The agent records each verified task ID and execution time and removes finished tasks. A scheduler must resume the agent or a verified runner; a timer that only opens a page is insufficient.
+- **Manual fallback:** Without those capabilities, the agent explicitly reports that nothing is scheduled and gives the next resume instruction. After Day 1 it includes Day 2's eligible date. A reminder is not automatic execution.
 
-Follow the skill's entry rule: install-and-follow requests run initial setup in the same turn; the two-day workflow starts when requested. Keep the files, state, credentials, and browser profile available on the selected computer through Day 2. Verify the actual runner before promising unattended completion.
+Install-and-use requests authorize setup and both days; explicit setup-only, no-scheduling, pause, and cancellation requests override that default. File-only installation or inspection runs nothing. Keep the files, state, credentials, and browser profile available on the selected computer through Day 2. Verify the actual runner before promising unattended completion. Day 2's date follows actual browsing completion, including delayed or interrupted runs.
 
 ## Private runtime data
 
