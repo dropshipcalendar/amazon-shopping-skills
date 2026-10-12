@@ -7,8 +7,8 @@ Use this flow for an installation/setup request. Preparation does not authorize 
 1. Follow `platform.md` and install the pinned requirements in the private runtime. Check the actual browser/control capabilities.
 2. Run `PY SKILL/scripts/setup.py prepare shopping-01`. Use the stable default ID unless the user supplied another one. New accounts use Amazon.com and the locally detected IANA timezone. Pass `--marketplace` or `--timezone` only for a known user preference. Do not infer locale from a folder name. If timezone detection fails, obtain just the missing timezone.
 3. Existing accounts retain settings, progress, limits, and credentials. Preparation never creates a replacement account to evade a blocked run. The returned account and launcher paths are authoritative.
-4. Open the local form with `PY SKILL/scripts/setup.py launch shopping-01`, or give the user its returned platform-specific `open-setup` launcher. A `setup_window_requested` result only means the process was launched; confirm the window is visible using computer tools. Do not assert the form opened merely because a process exists.
-5. Reopen and verify the dedicated Chrome profile using `browser-profile.md`. Confirm browser control and Amazon signed out before claiming Day 1 is ready. `profile_observed` is historical evidence; `day_one_readiness: requires_live_browser_check` deliberately does not certify the current browser.
+4. Reopen and verify the dedicated Chrome profile using `browser-profile.md`, including available native computer controls if browser integration cannot attach. Confirm browser control and Amazon signed out before claiming Day 1 is ready. `profile_observed` is historical evidence; `day_one_readiness: requires_live_browser_check` deliberately does not certify the current browser. Complete this check independently of credential setup.
+5. Run `PY SKILL/scripts/setup.py launch shopping-01`. A `setup_server_ready` result includes `setup_url`: open that exact URL on the same computer in an available visible browser, then confirm the blank form is displayed before handing over. The separate `open-setup` launcher starts the same server and opens the user's default browser automatically. Tkinter is not needed. A running server alone is not proof that the form is visible. Do not claim readiness if the dedicated shopping browser check failed; an unavailable configuration form alone does not block Day 1.
 
 The account ID is fixed once prepared. The Soft blue form displays only the three provider fields, Save, and Configure later, with the official Dropship Calendar logo. It retains marketplace, timezone, products, SMS settings, and saved allocation count. Advanced settings use `configure --prompt` or the validated account config. Do not require provider keys before completing browser checks.
 
@@ -16,15 +16,15 @@ The account ID is fixed once prepared. The Soft blue form displays only the thre
 
 The form masks API keys. Blank fields preserve existing credentials. Save updates the fields the user filled in, including replacing an existing value; it never reveals saved credentials. The Amazon password is never collected by this form: the user enters it directly on Amazon during Day 2.
 
-Tell the user to enter credentials privately and save. Do not capture screenshots, inspect form values, use clipboard-read tools, or automate secret entry while they do so. The form saves nonsecret settings to account configuration and supplied credentials to a supported native OS store. It neither contacts providers nor creates an inbox, phone allocation, browser session, or schedule. Some native stores can ask the user to unlock or authorize access; let the user handle those prompts.
+Tell the user to enter credentials privately and save. Stop browser/computer observations, screenshots, DOM reads, and clipboard access before private entry begins; resume only after the user says they finished. Do not automate secret entry. The form saves supplied credentials to a supported native OS store and preserves account settings. It makes only local requests, never contacts providers, and does not create an inbox, phone allocation, shopping browser session, or schedule. Some native stores can ask the user to unlock or authorize access; let the user handle those prompts.
 
 SMS is enabled by default in one-time verification mode. The default allocation limit is one. The minimal credential form does not configure or approve spending. A user supplies and accepts a total dollar limit separately through the interactive setup command or explicit instruction before the first required SMS allocation. A blank limit leaves spending pending, not unlimited. A positive saved limit is the spending authorization, including preexisting configurations. Do not prompt again for the same authorized purchase within the cap. Purchase only during signup if Amazon requires a phone, and stop above the cap or on an uncertain outcome. Preserve existing opt-outs and limits on rerun. After any allocation attempt, setup refuses changes to SMS enablement or budget.
 
-Save records `setup_saved_at` without starting the account workflow; Configure later closes the form without saving. A vault can fail partway through saving multiple fields; account settings are not written after that failure. Check presence before retrying; refill only fields the user intends to update. Do not promise an all-or-nothing vault transaction.
+Save records `setup_saved_at` without starting the account workflow. Save and Configure later both clear the form and stop its server; Configure later writes nothing. The tab can remain open with its result. Sessions expire after 15 minutes; reopen the launcher for a new session. If the page reports an unknown save outcome, inspect nonsecret setup status before retrying. A vault can fail partway through saving multiple fields; account settings are not written after that failure. Check presence before retrying; refill only fields the user intends to update. Do not promise an all-or-nothing vault transaction.
 
 For an existing Windows installation updated from the earlier credential implementation, follow the [Windows migration instructions](credentials.md#windows-replacements-and-existing-installations) to apply local-machine persistence to all already-saved fields without retyping them. New form saves already use the hardened behavior.
 
-## No GUI or native store
+## Unavailable form or native store
 
 If the form cannot open, provide the fully resolved command:
 
@@ -32,7 +32,7 @@ If the form cannot open, provide the fully resolved command:
 PY SKILL/scripts/setup.py configure shopping-01 --prompt
 ```
 
-This must run in the user's interactive local terminal, not agent-captured stdin. Ordinary settings are visible; credential input is hidden. An unavailable/locked native store does not fall back to plaintext files. The user can save settings without credentials and use the existing provider hidden prompts on Day 2, or use approved environment injection. Do not install a desktop, unlock a keyring, weaken a container, or configure a new secret service automatically.
+This must run in the user's interactive local terminal, not agent-captured stdin. Ordinary settings are visible; credential input is hidden. An unavailable/locked native store does not fall back to plaintext files. The user can configure later and use the existing provider hidden prompts on Day 2, or use approved environment injection. Continue the independent Day 1 browser checks even if the form cannot open. Do not install Tkinter, a desktop, unlock a keyring, weaken a container, or configure a new secret service automatically.
 
 ## Status and continuation
 
@@ -58,4 +58,4 @@ Example after successful live verification and a confirmed incomplete configurat
 >
 > Save your settings privately, then reply "configured", or say "start Day 1" to configure credentials later.
 
-If Day 1 is already authorized, continue it instead of asking the user to authorize it again. If it completes, report completion and its actual eligible Day 2 date with the manual resume instruction when needed. Never invent a date before Day 1 establishes it. If the form or browser check failed, report the concrete blocker instead of using "ready".
+If Day 1 is already authorized, continue it instead of asking the user to authorize it again. If it completes, report completion and its actual eligible Day 2 date with the manual resume instruction when needed. Never invent a date before Day 1 establishes it. A failed dedicated-browser check blocks readiness; report the specific missing capability and which supported controls were tried. Missing credentials, an unavailable credential form, and a pending SMS spending limit do not block Day 1 readiness after successful browser verification.
