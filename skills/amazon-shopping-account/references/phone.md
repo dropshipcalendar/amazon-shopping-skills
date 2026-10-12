@@ -1,6 +1,6 @@
 # TextVerified phone branch
 
-Load only when Amazon requests a phone number during `signup`. The user has selected **one-time SMS verification only**. Use `sms_mode=verification` and TextVerified's verification API. Never use rentals, reservations, renewals, or a rental fallback. Requires `TEXTVERIFIED_API_KEY`, `TEXTVERIFIED_API_USERNAME`, and an approved `sms_max_total_usd`. Do not purchase credit or infer a budget.
+Load only when Amazon requests a phone number during `signup`. The user has selected **one-time SMS verification only**. Use `sms_mode=verification` and TextVerified's verification API. Never use rentals, reservations, renewals, or a rental fallback. SMS is enabled by default (`sms_enabled: true`), but allocation requires `TEXTVERIFIED_API_KEY` and `TEXTVERIFIED_API_USERNAME` from native storage or approved environment injection, plus a positive user-approved `sms_max_total_usd`. Accept that limit once in private setup; do not ask again for the same authorized allocation within it. A null limit is pending, not unlimited. Honor a saved disabled toggle. Do not purchase credit or infer a budget.
 
 One-time numbers can become unavailable after completion; retain the allocation and expiry record without promising future access. Do not reopen the number-type choice or recommend a rental during this workflow. The API supports US numbers; do not change the user's stated marketplace or location to fit a number.
 

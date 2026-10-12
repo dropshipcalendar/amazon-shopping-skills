@@ -63,3 +63,14 @@ Sources checked 2026-10-12:
 - https://chromium.googlesource.com/chromium/src/+/HEAD/docs/user_data_dir.md
 - https://www.chromium.org/developers/creating-and-using-profiles/
 - https://specifications.freedesktop.org/basedir/latest/
+
+
+## Private setup interface and native credential services
+
+After runtime installation, follow [setup](setup.md). The pinned `tzlocal` dependency detects the new account's IANA timezone; an existing account keeps its saved zone. The optional form uses Python's Tkinter. Check availability in the private interpreter; Tkinter is not provided by pip and some Python builds omit it. If the GUI/display is unavailable, use the hidden interactive terminal setup. Do not install OS packages or a new desktop automatically.
+
+`setup.py prepare` returns the exact account path and `open-setup.cmd`, `open-setup.command`, or `open-setup.sh`. The launcher contains only the interpreter/script paths, account ID, and data root. `setup.py launch` requests a background GUI process; verify the visible window before claiming it opened. For a native file launcher the user can open it themselves. No launch implicitly starts Day 1.
+
+Credential storage uses the pinned keyring package. Windows uses WinVault and macOS uses Keychain. macOS may require a supported Python distribution and user permission to access Keychain. Linux accepts Secret Service or supported KWallet backends; their D-Bus session and required OS libraries/service must be present. The helper accepts only supported native backends and rejects plaintext/unavailable ones. See [credentials](credentials.md).
+
+A headless Linux machine can use an existing accessible Secret Service session, or its approved environment-injection mechanism. The interactive setup command handles configuration without a graphical display, but hidden credential prompting still needs a user terminal. Do not assume a container has a secret service, persistence, or a GUI. Do not start privileged containers, weaken security, or promise unattended continuation merely to make keyring access work.
