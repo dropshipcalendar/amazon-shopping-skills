@@ -36,6 +36,9 @@ def backend():
                     break
         if identity not in BACKENDS.get(sys.platform, set()):
             raise StoreError("unavailable")
+        if sys.platform == "win32":
+            from windows_credentials import WindowsCredentialStore
+            return WindowsCredentialStore.native()
         return chosen
     except StoreError:
         raise
@@ -96,6 +99,21 @@ def status(account):
         except StoreError as exc:
             result[name] = {"status": exc.status, "source": "native_store"}
     return result
+
+
+def harden_windows(account):
+    """Explicitly migrate this account's saved values; never inspect the whole vault."""
+    from windows_credentials import WindowsCredentialStore
+    chosen = backend()
+    if not isinstance(chosen, WindowsCredentialStore):
+        raise WorkflowError("Credential hardening is only needed for the Windows store")
+    updated = 0
+    for name in NAMES:
+        value = store_call(chosen.get_password, service(account), name)
+        if value is not None:
+            store_call(chosen.set_password, service(account), name, value)
+            updated += 1
+    return {"status": "hardened", "credentials_updated": updated}
 
 
 @contextmanager

@@ -22,6 +22,8 @@ SMS is enabled by default in one-time verification mode. The default allocation 
 
 Save records `setup_saved_at` without starting the account workflow; Configure later closes the form without saving. A vault can fail partway through saving multiple fields; account settings are not written after that failure. Check presence before retrying; refill only fields the user intends to update. Do not promise an all-or-nothing vault transaction.
 
+For an existing Windows installation updated from the earlier credential implementation, follow the [Windows migration instructions](credentials.md#windows-replacements-and-existing-installations) to apply local-machine persistence to all already-saved fields without retyping them. New form saves already use the hardened behavior.
+
 ## No GUI or native store
 
 If the form cannot open, provide the fully resolved command:

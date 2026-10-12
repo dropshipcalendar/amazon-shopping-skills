@@ -10,13 +10,25 @@ The private form and interactive setup command use `credential_store.py` and the
 
 | Platform | Storage | Prerequisite |
 |---|---|---|
-| Windows | Windows Credential Manager (WinVault) | Same Windows user context |
+| Windows | Windows Credential Manager, local-machine persistence | Same Windows user context |
 | macOS | Keychain | Supported Python build and access to the user's keychain |
 | Linux | Secret Service or KWallet | Running, accessible service and its required session/libraries |
 
 The service namespace includes the account ID and a hash of the resolved account directory, so separate accounts/data roots do not overwrite each other. Use the same root and OS user on both days. Blank form fields preserve stored values. Save updates only fields the user filled in. The advanced terminal setup requires explicit replacement confirmation. A partially failed multi-field save may have saved some credentials; inspect presence before retrying.
 
 The helper refuses plaintext, null, unsupported, or arbitrary third-party backends. It may select an approved native backend from a keyring chain but never uses the chain's insecure fallbacks. Do not install `keyrings.alt` or create a plaintext `.env` as a workaround. Native storage protects credentials at rest; it does not isolate them from every process with the same OS-user privileges.
+
+### Windows replacements and existing installations
+
+Windows selects the supported native backend, then uses the Windows credential API to write one entry per field with `CRED_PERSIST_LOCAL_MACHINE`. Replacing a field overwrites that entry instead of leaving the old key in a duplicate. Older shared/compound entries remain readable; a successful save writes the new entry first, then removes that field's stale compound copy and legacy shared entry, if present. Other fields are preserved. A failed cleanup is reported as a failed save, so retry after resolving the vault error.
+
+After updating an existing Windows installation, migrate all saved fields without retyping keys:
+
+```text
+PY SKILL/scripts/setup.py harden-credentials ACCOUNT_ID
+```
+
+Resolve the interpreter, skill path, and account ID as usual. This command accesses only the three known fields for that account, ignores environment overrides, preserves each latest saved value, writes local-machine entries, and removes superseded local duplicates. It prints only a count. It does not contact providers or change workflow settings. Read-only status does not migrate credentials. Untouched older entries retain their previous persistence until saved or migrated; changing local entries cannot recall copies already roamed or backed up. This migration is Windows-only; macOS and Linux continue using their existing native stores.
 
 ## Provider access
 

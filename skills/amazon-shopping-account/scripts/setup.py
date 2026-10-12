@@ -166,7 +166,7 @@ def launch_setup(account):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", help="Alternate accounts directory")
-    parser.add_argument("command", choices=("prepare", "status", "open", "launch", "configure"))
+    parser.add_argument("command", choices=("prepare", "status", "open", "launch", "configure", "harden-credentials"))
     parser.add_argument("account_id", nargs="?", default="shopping-01")
     parser.add_argument("--marketplace")
     parser.add_argument("--timezone")
@@ -180,6 +180,12 @@ def main():
             result["setup_launcher"] = str(launcher)
         else:
             account = Account(args.account_id, args.root).load()
+            if args.command == "harden-credentials":
+                with account.locked():
+                    account.load()
+                    result = credential_store.harden_windows(account)
+                print(json.dumps(result))
+                return 0
             if args.command == "open":
                 gui_setup(account)
                 return 0
