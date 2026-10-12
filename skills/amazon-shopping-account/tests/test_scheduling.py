@@ -1,5 +1,5 @@
 """Local schedule bookkeeping tests. No live scheduler or browser is invoked."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import subprocess
@@ -28,9 +28,12 @@ class SchedulingTests(unittest.TestCase):
     def prepare(self):
         return self.a.schedule_prepare("test-chat", "09:00")
 
+    def record(self, intent_id, automation_id):
+        return self.a.schedule_record(intent_id, automation_id, self.a.state["schedule"]["first_run_at"])
+
     def active(self):
         intent = self.prepare()
-        return self.a.schedule_record(intent["intent_id"], "fake-automation")
+        return self.record(intent["intent_id"], "fake-automation")
 
     def complete(self):
         # Supply simulated completion evidence rather than run either live day.
@@ -46,6 +49,127 @@ class SchedulingTests(unittest.TestCase):
         self.assertEqual(second["status"], "create_pending")
         self.assertIsNone(second["automation_id"])
         self.assertEqual(second["first_run_at"], "2026-10-13T09:00:00-07:00")
+
+    def finish_day_one(self):
+        self.a.verify_profile(str(self.a.path / "chrome-data/Default"))
+        self.a.browse_start()
+        self.a.viewed("desk lamp", "https://www.amazon.com/dp/TEST")
+        self.time += timedelta(minutes=5)
+        return self.a.browse_stop("completed")
+
+    def test_default_day_one_is_five_minutes_away_and_retry_does_not_drift(self):
+        first = self.a.schedule_prepare("test-chat").copy()
+        self.assertEqual(first["step"], "day-one")
+        self.assertEqual(first["first_run_at"], "2026-10-12T09:05:00-07:00")
+        self.time += timedelta(minutes=10)
+        self.a.load()
+        self.assertEqual(first, self.a.schedule_prepare("test-chat"))
+
+    def test_day_one_absolute_override_requires_future_aware_time(self):
+        for value in ("bad", "2026-10-12T10:00:00", "2026-10-12T08:59:00-07:00"):
+            with self.subTest(value=value), self.assertRaises(WorkflowError):
+                self.a.schedule_prepare("test-chat", run_at=value)
+            self.assertIsNone(self.a.state["schedule"])
+        intent = self.a.schedule_prepare("test-chat", run_at="2026-10-13T00:30:00+00:00")
+        self.assertEqual(intent["first_run_at"], "2026-10-12T17:30:00-07:00")
+
+    def test_default_delay_crosses_midnight_and_dst_by_elapsed_time(self):
+        for current, expected in (
+            (datetime(2026, 10, 13, 6, 58, tzinfo=timezone.utc), "2026-10-13T00:03:00-07:00"),
+            (datetime(2026, 3, 8, 9, 58, tzinfo=timezone.utc), "2026-03-08T03:03:00-07:00"),
+            (datetime(2026, 11, 1, 8, 58, tzinfo=timezone.utc), "2026-11-01T01:03:00-08:00"),
+        ):
+            with self.subTest(current=current):
+                self.time = current
+                self.a.state["schedule"] = None
+                self.assertEqual(self.a.schedule_prepare("test-chat")["first_run_at"], expected)
+
+    def test_record_requires_verified_execution_time(self):
+        intent = self.a.schedule_prepare("test-chat")
+        for value in (None, "2026-10-12T09:05:00"):
+            with self.subTest(value=value), self.assertRaises(WorkflowError):
+                self.a.schedule_record(intent["intent_id"], "fake", value)
+        mismatch = self.a.schedule_record(intent["intent_id"], "fake", "2026-10-12T09:06:00-07:00")
+        self.assertEqual(mismatch["status"], "timing_mismatch")
+        self.a.load()
+        self.assertEqual(self.a.state["schedule"]["automation_id"], "fake")
+        with self.assertRaises(WorkflowError):
+            self.a.schedule_record(intent["intent_id"], "replacement", intent["first_run_at"])
+        saved = self.a.schedule_record(intent["intent_id"], "fake", "2026-10-12T16:05:00+00:00")
+        self.assertEqual(saved["status"], "active")
+        self.assertEqual(saved["confirmed_run_at"], intent["first_run_at"])
+
+    def test_confirmation_distinguishes_repeated_dst_hour(self):
+        self.time = datetime(2026, 11, 1, 7, 0, tzinfo=timezone.utc)
+        intent = self.a.schedule_prepare("test-chat", run_at="2026-11-01T01:30:00-07:00")
+        saved = self.a.schedule_record(intent["intent_id"], "fake", "2026-11-01T01:30:00-08:00")
+        self.assertEqual(saved["status"], "timing_mismatch")
+        self.assertEqual(saved["automation_id"], "fake")
+
+    def test_day_two_explicit_clock_time_is_preserved_on_late_resume(self):
+        self.finish_day_one()
+        self.time = datetime(2026, 10, 15, 18, 0, tzinfo=timezone.utc)
+        intent = self.a.schedule_prepare("test-chat", "10:00", step="day-two")
+        self.assertEqual(intent["first_run_at"], "2026-10-16T10:00:00-07:00")
+
+    def test_existing_legacy_record_accepts_id_without_new_time_requirement(self):
+        intent = self.prepare()
+        del intent["step"]
+        self.a.save()
+        self.a.load()
+        result = self.a.schedule_record(intent["intent_id"], "legacy-task")
+        self.assertEqual(result["status"], "active")
+        self.assertEqual(result["automation_id"], "legacy-task")
+
+    def test_day_two_requires_completion_and_confirmed_day_one_cleanup(self):
+        with self.assertRaises(WorkflowError): self.a.schedule_prepare("test-chat", step="day-two")
+        self.active()
+        status = self.finish_day_one()
+        self.assertTrue(status["schedule_cleanup_required"])
+        with self.assertRaises(WorkflowError): self.a.schedule_prepare("test-chat", step="day-two")
+        self.a.schedule_result("remove", "fake-automation", "uncertain")
+        with self.assertRaises(WorkflowError): self.a.schedule_prepare("test-chat", step="day-two")
+        self.a.schedule_result("remove", "fake-automation", "confirmed")
+        second = self.a.schedule_prepare("test-chat", step="day-two").copy()
+        self.assertEqual(second["first_run_at"], "2026-10-13T09:00:00-07:00")
+        self.assertEqual(len(self.a.state["schedule_history"]), 1)
+        self.assertEqual(self.a.state["schedule_history"][0]["automation_id"], "fake-automation")
+        self.record(second["intent_id"], "fake-day-two")
+        self.a.load()
+        self.assertEqual(self.a.schedule_prepare("test-chat"), self.a.state["schedule"])
+        self.assertEqual(len(self.a.state["schedule_history"]), 1)
+        with self.assertRaises(WorkflowError): self.a.schedule_action("remove", "fake-automation")
+        self.complete()
+        self.a.schedule_result("remove", "fake-day-two", "confirmed")
+        self.assertFalse(self.a.status()["schedule_cleanup_required"])
+
+    def test_day_two_uses_completion_date_after_midnight_and_late_resume(self):
+        self.time = datetime(2026, 10, 13, 6, 58, tzinfo=timezone.utc)
+        self.finish_day_one()
+        with self.assertRaises(WorkflowError):
+            self.a.schedule_prepare("test-chat", step="day-two", run_at="2026-10-13T09:00:00-07:00")
+        self.time = datetime(2026, 10, 16, 18, 0, tzinfo=timezone.utc)
+        intent = self.a.schedule_prepare("test-chat", step="day-two")
+        self.assertEqual(intent["first_run_at"], "2026-10-16T11:05:00-07:00")
+
+    def test_lost_day_one_creation_is_reconciled_before_day_two(self):
+        intent = self.a.schedule_prepare("test-chat").copy()
+        self.a.schedule_creation_result(intent["intent_id"], "uncertain")
+        self.finish_day_one()
+        self.assertTrue(self.a.status()["schedule_cleanup_required"])
+        with self.assertRaises(WorkflowError): self.a.schedule_prepare("test-chat", step="day-two")
+        saved = self.record(intent["intent_id"], "recovered-day-one")
+        self.assertEqual(saved["status"], "removal_pending")
+        with self.assertRaises(WorkflowError): self.a.schedule_action("resume", "recovered-day-one")
+        self.a.schedule_result("remove", "recovered-day-one", "confirmed")
+        self.assertEqual(self.a.schedule_prepare("test-chat", step="day-two")["step"], "day-two")
+
+    def test_confirmed_absent_day_one_allows_day_two_without_new_day_one(self):
+        intent = self.a.schedule_prepare("test-chat").copy()
+        self.finish_day_one()
+        self.a.schedule_creation_result(intent["intent_id"], "confirmed_absent")
+        self.assertEqual(self.a.state["schedule"]["status"], "removed")
+        self.assertEqual(self.a.schedule_prepare("test-chat", step="day-two")["step"], "day-two")
 
     def test_prepare_cannot_replace_target_time_or_timezone(self):
         self.prepare()
@@ -69,6 +193,8 @@ class SchedulingTests(unittest.TestCase):
         saved = self.a.state["schedule"]
         saved["thread_id"] = saved.pop("target_id")
         del saved["target_kind"]
+        del saved["step"]
+        saved.pop("confirmed_run_at", None)
         self.a.save()
         self.a.load()
         result = self.prepare()
@@ -83,11 +209,11 @@ class SchedulingTests(unittest.TestCase):
 
     def test_record_requires_matching_intent_and_id(self):
         intent = self.prepare()
-        with self.assertRaises(WorkflowError): self.a.schedule_record("wrong-intent", "fake-automation")
-        with self.assertRaises(WorkflowError): self.a.schedule_record(intent["intent_id"], "")
-        self.a.schedule_record(intent["intent_id"], "fake-automation")
-        self.assertEqual(self.a.schedule_record(intent["intent_id"], "fake-automation")["status"], "active")
-        with self.assertRaises(WorkflowError): self.a.schedule_record(intent["intent_id"], "replacement-id")
+        with self.assertRaises(WorkflowError): self.record("wrong-intent", "fake-automation")
+        with self.assertRaises(WorkflowError): self.record(intent["intent_id"], "")
+        self.record(intent["intent_id"], "fake-automation")
+        self.assertEqual(self.record(intent["intent_id"], "fake-automation")["status"], "active")
+        with self.assertRaises(WorkflowError): self.record(intent["intent_id"], "replacement-id")
 
     def test_uncertain_creation_does_not_make_a_new_intent(self):
         intent = self.prepare().copy()
@@ -158,7 +284,7 @@ class SchedulingTests(unittest.TestCase):
         self.a.schedule_creation_result(intent["intent_id"], "uncertain")
         self.complete()
         self.assertTrue(self.a.status()["schedule_cleanup_required"])
-        result = self.a.schedule_record(intent["intent_id"], "recovered-automation")
+        result = self.record(intent["intent_id"], "recovered-automation")
         self.assertEqual(result["status"], "removal_pending")
         self.a.schedule_result("remove", "recovered-automation", "confirmed")
         self.assertFalse(self.a.status()["schedule_cleanup_required"])
@@ -191,10 +317,13 @@ class SchedulingTests(unittest.TestCase):
         def run(*args):
             result = subprocess.run(command + list(args), capture_output=True, text=True, check=True)
             return json.loads(result.stdout)
-        intent = run("schedule-prepare", "schedule-test", "--target-id", "offline-runner", "--target-kind", "runner", "--local-time", "09:00")
+        future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        intent = run("schedule-prepare", "schedule-test", "--target-id", "offline-runner", "--target-kind", "runner", "--step", "day-one", "--run-at", future)
         self.assertEqual(intent["target_id"], "offline-runner")
         self.assertEqual(intent["target_kind"], "runner")
-        saved = run("schedule-record", "schedule-test", "--intent-id", intent["intent_id"], "--automation-id", "offline-fake-id")
+        self.assertEqual(intent["step"], "day-one")
+        self.assertEqual(datetime.fromisoformat(intent["first_run_at"]), datetime.fromisoformat(future))
+        saved = run("schedule-record", "schedule-test", "--intent-id", intent["intent_id"], "--automation-id", "offline-fake-id", "--run-at", intent["first_run_at"])
         self.assertEqual(saved["automation_id"], "offline-fake-id")
         run("schedule-action", "schedule-test", "--automation-id", "offline-fake-id", "--action", "remove")
         removed = run("schedule-result", "schedule-test", "--automation-id", "offline-fake-id", "--action", "remove", "--outcome", "confirmed")
