@@ -1,0 +1,40 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python bytecode, environments, and test caches
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+runtime/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Account state and browser data must stay outside the distributable skill
+accounts/
+AmazonShoppingSkill/
+chrome-data/
+state.json
+config.json
+open-browser.cmd
+open-browser.command
+*.log
+
+# Optional local installer/runtime artifacts
+node_modules/
+.agents/
+.claude/
+.codex/
+skills-lock.json
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+Desktop.ini
