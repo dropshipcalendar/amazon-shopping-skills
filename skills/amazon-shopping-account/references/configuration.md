@@ -29,6 +29,6 @@ For the full two-day run, read [continuation and scheduling](scheduling.md). If 
 
 ## Runtime setup and validation
 
-Read [platform setup](platform.md) for the private Python runtime on Windows or macOS. Use `workflow.py environment` to obtain absolute paths without reading credentials or creating files. Read dependency versions from `scripts/requirements.txt`, not from this prose.
+Read [platform setup](platform.md) for the private Python runtime on Windows, macOS, or Linux. Use `workflow.py environment` to obtain absolute paths without reading credentials or creating files. Read dependency versions from `scripts/requirements.txt`, not from this prose.
 
 Run `PY -m unittest discover -s SKILL/tests -v` for offline behavioral checks. Tests use temporary directories and fake providers; never run account-creation tests against Amazon. Live provider availability, Amazon acceptance, and browser-control compatibility require a separately authorized real run.
