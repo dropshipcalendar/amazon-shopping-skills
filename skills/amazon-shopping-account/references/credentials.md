@@ -30,6 +30,12 @@ PY SKILL/scripts/setup.py harden-credentials ACCOUNT_ID
 
 Resolve the interpreter, skill path, and account ID as usual. This command accesses only the three known fields for that account, ignores environment overrides, preserves each latest saved value, writes local-machine entries, and removes superseded local duplicates. It prints only a count. It does not contact providers or change workflow settings. Read-only status does not migrate credentials. Untouched older entries retain their previous persistence until saved or migrated; changing local entries cannot recall copies already roamed or backed up. This migration is Windows-only; macOS and Linux continue using their existing native stores.
 
+## Local browser form
+
+The configuration page runs on `127.0.0.1` on a temporary port, with only bundled HTML, CSS, JavaScript, and the logo. No Tkinter or hosted page is involved. The server validates exact Host and Origin headers plus a random session token for mutations, accepts only bounded JSON for the three provider fields, rejects cross-origin preflights, and never exposes a credential-reading endpoint. Pages cannot be framed; responses disable caching and referrers. The token travels in the initial URL fragment, is removed from the address bar by the page, and is never written to account files. Keep that short-lived setup URL private; it authorizes writes for this session, although it is not a provider credential.
+
+API keys are masked and sent only in a POST body to the local server, which uses the same native-store code as terminal setup. The application does not use browser storage, cookies, analytics, external assets, or request logging. Save/Configure later clear fields and stop the server; it also expires after 15 minutes. Closing the tab clears its fields; the server may remain until expiry. Browser extensions and other processes running as the same user remain outside this isolation boundary. Never inspect the page during private entry or tell the user to save credentials in their browser.
+
 ## Provider access
 
 Every provider invocation checks its own process environment first, then the account's native store. Existing approved environment injection remains supported. Stored values are injected into that helper process only and restored/removed on exit. The CLI has no command that prints credentials.
@@ -38,7 +44,7 @@ Use `setup.py status ACCOUNT_ID --check-credentials` for a presence/access check
 
 ## Manual fallback
 
-When GUI setup is unavailable, give a fully resolved command for the user's own interactive terminal:
+When the local browser form is unavailable, give a fully resolved command for the user's own interactive terminal:
 
 ```text
 PY SKILL/scripts/setup.py configure ACCOUNT_ID --prompt
