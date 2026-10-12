@@ -379,17 +379,21 @@ class Account:
         self.save()
         return self.status()
 
-    def schedule_prepare(self, thread_id, local_time):
-        """Reserve one same-chat schedule intent. This never contacts a scheduler."""
+    def schedule_prepare(self, target_id, local_time, target_kind="session"):
+        """Reserve one continuation intent. This never contacts a scheduler."""
         if self.state["phase"] == "complete":
             raise WorkflowError("Completed workflows must clean up schedules, not create one")
-        if not thread_id.strip():
-            raise WorkflowError("The actual current chat ID is required")
+        if not target_id.strip():
+            raise WorkflowError("An observed resumable session or runner identifier is required")
+        if target_kind not in ("session", "runner"):
+            raise WorkflowError("Continuation target must be a session or runner")
         if not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", local_time):
             raise WorkflowError("Use a local 24-hour time in HH:MM format")
         existing = self.state.get("schedule")
         if existing:
-            if existing["thread_id"] != thread_id or existing["local_time"] != local_time or existing["timezone"] != self.config["timezone"]:
+            saved_target = existing.get("target_id", existing.get("thread_id"))
+            saved_kind = existing.get("target_kind", "session")
+            if saved_target != target_id or saved_kind != target_kind or existing["local_time"] != local_time or existing["timezone"] != self.config["timezone"]:
                 raise WorkflowError("A schedule record already exists; inspect and update that automation instead of creating another")
             return existing
         zone = ZoneInfo(self.config["timezone"])
@@ -398,7 +402,7 @@ class Account:
         if target.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None) != target.replace(tzinfo=None):
             raise WorkflowError("Selected local time does not exist on that date; choose another time")
         # A late manual resume can target today, but never authorizes a second schedule.
-        schedule = dict(intent_id=uuid.uuid4().hex, automation_id=None, thread_id=thread_id,
+        schedule = dict(intent_id=uuid.uuid4().hex, automation_id=None, target_id=target_id, target_kind=target_kind,
                         local_time=local_time, timezone=self.config["timezone"], first_run_at=target.isoformat(),
                         status="create_pending", pending_action="create", created_at=stamp(), updated_at=stamp())
         self.state["schedule"] = schedule
@@ -517,7 +521,9 @@ def main():
             q.add_argument("--entry-id", required=True); q.add_argument("--provider-id")
             q.add_argument("--status", required=True, choices=("allocated", "uncertain", "cancelled", "completed", "failed"))
         if name == "schedule-prepare":
-            q.add_argument("--thread-id", required=True); q.add_argument("--local-time", required=True)
+            q.add_argument("--target-id", "--thread-id", dest="target_id", required=True)
+            q.add_argument("--target-kind", choices=("session", "runner"), default="session")
+            q.add_argument("--local-time", required=True)
         if name in ("schedule-record", "schedule-creation-result"):
             q.add_argument("--intent-id", required=True)
         if name in ("schedule-record", "schedule-action", "schedule-result"):
@@ -550,7 +556,7 @@ def main():
                 elif name == "signup-complete": result = account.complete(args.evidence)
                 elif name == "reserve-sms": result = account.reserve_sms(args.amount, args.service, args.kind)
                 elif name == "sms-result": result = account.sms_result(args.entry_id, args.status, args.provider_id)
-                elif name == "schedule-prepare": result = account.schedule_prepare(args.thread_id, args.local_time)
+                elif name == "schedule-prepare": result = account.schedule_prepare(args.target_id, args.local_time, args.target_kind)
                 elif name == "schedule-record": result = account.schedule_record(args.intent_id, args.automation_id)
                 elif name == "schedule-action": result = account.schedule_action(args.action, args.automation_id)
                 elif name == "schedule-result": result = account.schedule_result(args.action, args.automation_id, args.outcome)
