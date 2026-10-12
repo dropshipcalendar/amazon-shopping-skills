@@ -26,6 +26,9 @@ config.json
 open-browser.cmd
 open-browser.command
 open-browser.sh
+open-setup.cmd
+open-setup.command
+open-setup.sh
 *.log
 
 # Optional local installer/runtime artifacts

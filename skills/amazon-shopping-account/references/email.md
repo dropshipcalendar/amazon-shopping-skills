@@ -1,6 +1,6 @@
 # AgentMail
 
-Load only during Day 2 when an inbox or verification email is needed. Prerequisites: phase `signup`, an authorized AgentMail account, and `AGENTMAIL_API_KEY` in the environment.
+Load only during Day 2 when an inbox or verification email is needed. Prerequisites: phase `signup`, an authorized AgentMail account, and `AGENTMAIL_API_KEY` available through the account's native credential store or approved process environment. Follow `credentials.md` for a supervised hidden-prompt fallback. Setup may store the key earlier but must not create an inbox before Day 2.
 
 ```text
 PY SKILL/scripts/providers.py email-create ACCOUNT_ID

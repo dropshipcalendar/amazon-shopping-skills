@@ -1,40 +1,51 @@
-# Credential entry on Windows, macOS, or Linux
+# Private credentials on Windows, macOS, and Linux
 
-Use the platform detected by `workflow.py environment`. Never ask users to paste secrets into chat or show credential values in screenshots, tool output, shell command arguments, or logs.
+For first-time preparation read [setup](setup.md). Do not ask for secrets in chat, inspect credential-entry fields, take screenshots during entry, or place secrets in command arguments, logs, configuration, or skill files. The Amazon password is entered directly by the user on Amazon during Day 2; setup never stores it.
 
-Only three variable names are relevant:
-- `AGENTMAIL_API_KEY` for the email helper.
-- `TEXTVERIFIED_API_KEY` and `TEXTVERIFIED_API_USERNAME` for the SMS helper.
+The provider fields are `AGENTMAIL_API_KEY`, `TEXTVERIFIED_API_KEY`, and `TEXTVERIFIED_API_USERNAME`. Credentials may be configured before Day 2, but provider operations remain restricted to Day 2 signup.
 
-The helper reads its own process environment. It does not automatically read macOS Keychain or Windows Credential Manager. An existing credential manager is usable only through its approved environment-injection mechanism. Do not imply that saving a key in either OS vault alone makes it available to this skill.
+## Native storage
 
-## Hidden terminal entry
+The private form and interactive setup command use `credential_store.py` and the pinned `keyring` package. Only these native backends are accepted:
 
-If the user has not configured an injector, the provider helper supports hidden, nonpersistent prompts. Run it in a user-operated interactive local terminal, not an agent-captured stdin session:
+| Platform | Storage | Prerequisite |
+|---|---|---|
+| Windows | Windows Credential Manager (WinVault) | Same Windows user context |
+| macOS | Keychain | Supported Python build and access to the user's keychain |
+| Linux | Secret Service or KWallet | Running, accessible service and its required session/libraries |
+
+The service namespace includes the account ID and a hash of the resolved account directory, so separate accounts/data roots do not overwrite each other. Use the same root and OS user on both days. Blank form fields preserve stored values. Save updates only fields the user filled in. The advanced terminal setup requires explicit replacement confirmation. A partially failed multi-field save may have saved some credentials; inspect presence before retrying.
+
+The helper refuses plaintext, null, unsupported, or arbitrary third-party backends. It may select an approved native backend from a keyring chain but never uses the chain's insecure fallbacks. Do not install `keyrings.alt` or create a plaintext `.env` as a workaround. Native storage protects credentials at rest; it does not isolate them from every process with the same OS-user privileges.
+
+## Provider access
+
+Every provider invocation checks its own process environment first, then the account's native store. Existing approved environment injection remains supported. Stored values are injected into that helper process only and restored/removed on exit. The CLI has no command that prints credentials.
+
+Use `setup.py status ACCOUNT_ID --check-credentials` for a presence/access check. It reports configured, missing, locked, or unavailable and the source, without values. This can prompt the OS to unlock or authorize access: let the user handle it. Plain `status` does not access the vault. Presence is not proof that a provider accepts the credential; setup makes no provider requests.
+
+## Manual fallback
+
+When GUI setup is unavailable, give a fully resolved command for the user's own interactive terminal:
+
+```text
+PY SKILL/scripts/setup.py configure ACCOUNT_ID --prompt
+```
+
+Replace all paths and the account ID. Windows PowerShell requires `&` before the quoted interpreter path. This command can save settings without credentials even when native storage is unavailable.
+
+When there is no usable native store, use approved environment injection or hidden provider prompts at the actual Day 2 operation:
 
 ```text
 PY SKILL/scripts/providers.py email-create ACCOUNT_ID --prompt-credentials
+PY SKILL/scripts/providers.py email-messages ACCOUNT_ID --after UTC_REQUEST_TIMESTAMP --prompt-credentials
 PY SKILL/scripts/providers.py phone-services ACCOUNT_ID --prompt-credentials
 ```
 
-Prepare a fully resolved copy-paste command for the user: replace `PY`, `SKILL`, and `ACCOUNT_ID` with the correct paths and account rather than making the user edit placeholders. On Windows use PowerShell's `&` to execute the quoted interpreter path. On macOS and Linux quote the interpreter and script paths. The user pastes values directly into the hidden prompt. Only credentials missing from the process environment are requested. Input is rejected if no interactive terminal or hidden entry is available; there is no echoed-input fallback. Values are available only to that helper process, are not saved, and must be supplied again on another invocation unless an injector is configured. This is a terminal entry option, not a graphical setup wizard.
+These prompts run only in the user's interactive terminal, never agent-captured stdin. Hidden entry must be available; there is no echoed-input fallback. Prompted values last for that helper invocation only. Another invocation can require entry again if no native store or injector is configured. Do not imply that entering a key into one terminal makes it available to unrelated processes or future runs.
 
-Run only the operation appropriate to the current workflow phase. These commands reject credential prompting outside Day 2 signup. API output may contain a private verification message required to complete signup; keep it out of final reports.
+For unattended execution, verify access from the actual scheduled process under its OS user/session. A desktop-unlocked store is not proof that a background process can access it. If unlocking, secret entry, or the Amazon password requires the user, choose manual continuation. Do not change keychain permissions, security settings, or container privilege to remove the handoff.
 
-## Windows environment setup
-
-For users choosing persistent user environment variables, direct them to Start -> "Edit environment variables for your account" -> User variables -> New. Have them enter the three names and values privately. Do not request a screenshot containing values. Restart the app or process that launches helpers so its children inherit the updated environment; if necessary use the supported launcher for that app. These are environment variables, not an encrypted credential vault.
-
-## macOS environment setup
-
-An exported variable in one Terminal session is inherited by helper commands launched from that session, not by an unrelated Terminal or an already-running desktop app. Use hidden local entry above for an immediate operation, or a user-approved secret-manager launcher that injects the variables into the process running this workflow. Do not tell the user that editing `.zshrc` or restarting a Finder-launched app automatically supplies these values. Do not persist raw API keys in shell startup files or shell history.
-
-## Linux and cloud environment setup
-
-Use the cloud computer's approved secret injection mechanism or an existing secret-manager launcher to provide values to the actual helper/agent process. An export in one terminal does not populate an unrelated browser service, scheduler, or future container. Do not write keys into shell startup files, a repository, or shell history. For an immediate supervised operation, the hidden prompt above works when a private interactive terminal is available; do not emulate it by typing secrets through captured tools.
-
-For unattended Day 2 execution on any supported platform, verify that the actual scheduled process receives the environment through its approved launcher. Test credential presence or a read-only connection status, never print the values. A missing credential should produce an actionable setup message; do not provision a new provider account or substitute a different provider.
-
-Sources checked 2026-10-12:
-- https://support.apple.com/guide/terminal/use-environment-variables-apd382cc5fa-4f58-4449-b20a-41c53c006f8f/mac
-- https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables
+Sources:
+- https://keyring.readthedocs.io/en/latest/
+- https://docs.python.org/3/library/getpass.html
