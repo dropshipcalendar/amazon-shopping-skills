@@ -84,8 +84,7 @@ class SetupTests(unittest.TestCase):
         setup.save_settings(self.account, {"sms_enabled": False, "sms_max_total_usd": "2.50"}, approve_sms_budget=True)
         store.save(self.account, {store.NAMES[0]: "old", store.NAMES[1]: "retained"})
         before = dict(self.account.config)
-        fields = {name: Mock(get=Mock(return_value=value)) for name, value in
-                  zip(store.NAMES, ("new", "", "test-user"))}
+        fields = dict(zip(store.NAMES, ("new", "", "test-user")))
         setup_ui.save_credentials(self.account, fields, setup.save_settings)
         self.assertEqual(self.account.config, before)
         self.assertEqual(store.read(self.account, store.NAMES[0]), "new")
@@ -93,7 +92,7 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(store.read(self.account, store.NAMES[2]), "test-user")
 
     def test_blank_minimal_form_does_not_approve_spending(self):
-        fields = {name: Mock(get=Mock(return_value="")) for name in store.NAMES}
+        fields = dict.fromkeys(store.NAMES, "")
         setup_ui.save_credentials(self.account, fields, setup.save_settings)
         self.assertTrue(self.account.config["sms_enabled"])
         self.assertIsNone(self.account.config["sms_max_total_usd"])
@@ -265,10 +264,11 @@ class SetupTests(unittest.TestCase):
         with patch.object(setup.sys.stdin, "isatty", return_value=True), patch.object(setup.getpass, "getpass", side_effect=warning):
             with self.assertRaises(workflow.WorkflowError): setup.hidden_input("Key: ")
 
-    def test_gui_unavailable_does_not_prompt_in_agent_terminal(self):
+    def test_local_browser_form_does_not_require_tkinter(self):
         with patch.dict(sys.modules, {"tkinter": None}):
-            with self.assertRaisesRegex(workflow.WorkflowError, "own terminal"):
+            with patch.object(setup_ui, "show_setup") as show:
                 setup.gui_setup(self.account)
+                show.assert_called_once()
 
     def test_launchers_quote_paths_and_use_correct_platform_suffix(self):
         for platform, suffix in (("win32", ".cmd"), ("darwin", ".command"), ("linux", ".sh")):
