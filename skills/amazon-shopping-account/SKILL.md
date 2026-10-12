@@ -1,6 +1,6 @@
 ---
 name: amazon-shopping-account
-description: "Set up one Amazon shopping account across two days with a same-chat scheduled continuation: browse allowlisted products signed out on Day 1, then register on Day 2 using a dedicated Chrome profile, AgentMail, and optional one-time TextVerified SMS. Also resume this workflow. Excludes Seller Central, AWS, purchases, and account recovery."
+description: "Set up or resume one Amazon shopping account across two days: browse allowlisted products signed out on Day 1, then register on Day 2 using a dedicated Chrome profile, AgentMail, and optional one-time TextVerified SMS. Supports scheduled continuation when available. Excludes Seller Central, AWS, purchases, and account recovery."
 ---
 
 # Amazon shopping account
@@ -9,22 +9,22 @@ Follow the user's current instructions over this playbook. This workflow is for 
 
 ## Entry and state
 
-Use the bundled `scripts/workflow.py`; paths below are relative to this skill. First read [platform setup](references/platform.md), detect Windows or macOS, and use its runtime and launch instructions. Do not assume Windows paths or modify global Python.
+Read this file from the complete downloaded skill folder; no particular agent application or skill loader is required. Use your available computer, browser, terminal, and file tools. You must be able to control the dedicated Chrome instance, read/write local files, and run Python commands, directly or through a terminal window. First read [platform setup](references/platform.md), detect Windows or macOS, and use its runtime and launch instructions. Paths below are relative to this skill; do not assume Windows paths or modify global Python.
 
 1. Read [configuration](references/configuration.md). Use the bundled product allowlist automatically; do not ask the user to supply product names. Obtain only missing account ID, marketplace, and timezone. SMS settings can wait until needed. When credentials are missing, follow [local credential setup](references/credentials.md). Never put credentials in chat, skill files, command arguments, or progress logs.
 2. Initialize once, or run `workflow.py status ACCOUNT_ID`. Per-account config, progress, and Chrome data live outside the skill under the detected platform's data directory; use the exact path returned by the helper.
 3. For unfinished browser work, read [browser profile](references/browser-profile.md), establish the dedicated session, and verify its actual profile path on every launch before entering data or acting.
-4. For a user-authorized full two-day run, read [same-chat scheduling](references/scheduling.md), complete its preflight, and register one continuation before Day 1. On resumed runs, inspect the saved schedule instead of creating another. Do not schedule when the user asks only to author, inspect, or test this skill, or explicitly forbids scheduling.
+4. For a user-authorized full two-day run, read [continuation and scheduling](references/scheduling.md). Use an available scheduler only if it can resume this agent or invoke a verified agent runner on this computer. If unavailable, save Day 1 normally and provide the manual Day 2 resume instruction. On resumed runs, inspect any saved schedule instead of creating another. Do not schedule when the user asks only to author, inspect, or test this skill, or explicitly forbids scheduling.
 5. Follow the phase below. Reconcile saved progress with the live page before resuming. A saved phase is not proof that a browser action succeeded.
 
 | Phase / trigger | Action |
 |---|---|
 | `new` or `browsing` | Read [Day 1](references/day-one.md). Browse signed out for 300 seconds total, using only the configured allowlist. Add at most two distinct matching products, one each. Do not register, create email, or obtain SMS numbers yet. |
-| `waiting_day_two` | If not yet eligible, confirm the saved continuation and end this run. On or after the eligible date, continue Day 2. Do not sleep overnight or claim an unconfirmed wakeup. |
+| `waiting_day_two` | If not yet eligible, report the saved schedule or manual resume instruction and end this run. On or after the eligible date, continue Day 2. Do not sleep overnight or claim an unconfirmed wakeup. |
 | `signup` | Read [Day 2](references/day-two.md). Create and verify the shopping account in the same profile. |
 | Email needed during `signup` | Read [email](references/email.md); use the AgentMail helper. |
 | Phone required during `signup` | Read [phone](references/phone.md); use one-time TextVerified SMS only, within the configured attempt and spending limits. Never rent or renew a number. |
-| `complete` | Follow scheduling cleanup to remove the saved automation, then report the result. Never repeat signup or browsing to retry cleanup. |
+| `complete` | If a schedule exists, follow cleanup to remove it; then report the result. Never repeat signup or browsing to retry cleanup. |
 
 ## Invariants
 
@@ -36,4 +36,4 @@ Use the bundled `scripts/workflow.py`; paths below are relative to this skill. F
 
 ## Completion
 
-Record only observed results. Report the phase, actual browsing time and cart additions, masked email/phone, and any blocker. After signup, include how the user can reopen the dedicated browser and whether phone access will expire. Remove the saved continuation through the scheduler and confirm cleanup in state; if removal fails, report cleanup pending. Never print API keys, passwords, session cookies, or OTPs in the final report. Creating/installing this skill alone does not execute it or schedule either day.
+Record only observed results. Report the phase, actual browsing time and cart additions, masked email/phone, and any blocker. After signup, include how the user can reopen the dedicated browser and whether phone access will expire. If a schedule exists, remove it through the selected scheduler and confirm cleanup in state; if removal fails, report cleanup pending. Never print API keys, passwords, session cookies, or OTPs in the final report. Downloading or installing this skill alone does not execute it or schedule either day.
