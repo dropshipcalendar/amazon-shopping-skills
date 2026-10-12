@@ -208,6 +208,7 @@ class Account:
             raise WorkflowError("Unexpected state identity/version")
         # Backward-compatible: older version-1 accounts had no scheduler record.
         self.state.setdefault("schedule", None)
+        self.state.setdefault("schedule_history", [])
         return self
 
     def save(self):
@@ -221,7 +222,7 @@ class Account:
         self.state = dict(version=1, account_id=self.account_id, created_at=stamp(), phase="new",
                           profile_verified_at=None, day_one_date=None, day_two_date=None,
                           elapsed_seconds=0, active_since=None, viewed=[], cart=[], inbox=None,
-                          sms=[], completion=None, schedule=None)
+                          sms=[], completion=None, schedule=None, schedule_history=[])
         write_json(self.config_path, config)
         (self.path / "chrome-data").mkdir(exist_ok=True)
         self.save()
@@ -250,7 +251,8 @@ class Account:
                     sms_enabled=self.config["sms_enabled"],
                     sms_budget_status="approved" if self.config["sms_max_total_usd"] is not None else "pending",
                     schedule=self.state.get("schedule"),
-                    schedule_cleanup_required=bool(self.state["phase"] == "complete" and self.state.get("schedule") and self.state["schedule"]["status"] != "removed"),
+                    schedule_history=self.state.get("schedule_history", []),
+                    schedule_cleanup_required=bool(self.schedule_finished() and self.state.get("schedule") and self.state["schedule"]["status"] != "removed"),
                     account_directory=str(self.path), config_path=str(self.config_path),
                     state_path=str(self.state_path), profile_path=str(self.path / "chrome-data/Default"))
 
@@ -278,7 +280,6 @@ class Account:
         if not self.state["day_one_date"]:
             day = current.astimezone(ZoneInfo(self.config["timezone"])).date()
             self.state["day_one_date"] = day.isoformat()
-            self.state["day_two_date"] = (day + timedelta(days=1)).isoformat()
         self.state.update(phase="browsing", active_since=stamp(current))
         self.save()
         return self.status()
@@ -297,6 +298,11 @@ class Account:
         self.state.update(elapsed_seconds=elapsed, active_since=None, last_browse_result=result)
         if result == "completed":
             self.state["phase"] = "waiting_day_two"
+            completed = now()
+            self.state["day_one_completed_at"] = stamp(completed)
+            day = completed.astimezone(ZoneInfo(self.config["timezone"])).date()
+            self.state["day_two_date"] = (day + timedelta(days=1)).isoformat()
+            self.finish_schedule()
         self.save()
         return self.status()
 
@@ -397,13 +403,31 @@ class Account:
         if any(x["status"] in ("pending", "uncertain") for x in self.state["sms"]):
             raise WorkflowError("Reconcile the uncertain SMS purchase first")
         self.state.update(phase="complete", completion=dict(at=stamp(), evidence=evidence[:500]))
-        schedule = self.state.get("schedule")
-        if schedule and schedule["status"] != "removed" and schedule.get("automation_id"):
-            schedule.update(status="removal_pending", pending_action="remove", updated_at=stamp())
+        self.finish_schedule()
         self.save()
         return self.status()
 
-    def schedule_prepare(self, target_id, local_time, target_kind="session"):
+    def schedule_finished(self):
+        schedule = self.state.get("schedule")
+        return self.state["phase"] == "complete" or bool(
+            schedule and schedule.get("step", "day-two") == "day-one"
+            and self.state["phase"] in ("waiting_day_two", "signup"))
+
+    def finish_schedule(self):
+        schedule = self.state.get("schedule")
+        if self.schedule_finished() and schedule and schedule["status"] != "removed" and schedule.get("automation_id"):
+            schedule.update(status="removal_pending", pending_action="remove", updated_at=stamp())
+
+    def schedule_time(self, value):
+        try:
+            target = datetime.fromisoformat(value)
+        except (ValueError, TypeError):
+            raise WorkflowError("Use an ISO execution time with an explicit UTC offset") from None
+        if target.tzinfo is None or target.utcoffset() is None:
+            raise WorkflowError("Execution time requires an explicit UTC offset")
+        return target.astimezone(ZoneInfo(self.config["timezone"]))
+
+    def schedule_prepare(self, target_id, local_time=None, target_kind="session", step=None, run_at=None):
         """Reserve one continuation intent. This never contacts a scheduler."""
         if self.state["phase"] == "complete":
             raise WorkflowError("Completed workflows must clean up schedules, not create one")
@@ -411,41 +435,90 @@ class Account:
             raise WorkflowError("An observed resumable session or runner identifier is required")
         if target_kind not in ("session", "runner"):
             raise WorkflowError("Continuation target must be a session or runner")
-        if not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", local_time):
+        if local_time is not None and not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", local_time):
             raise WorkflowError("Use a local 24-hour time in HH:MM format")
+        if local_time is not None and run_at is not None:
+            raise WorkflowError("Choose either a local time or an explicit execution time")
+        if step is not None and step not in ("day-one", "day-two"):
+            raise WorkflowError("Schedule step must be day-one or day-two")
         existing = self.state.get("schedule")
+        step = step or (existing.get("step", "day-two") if existing else
+                        "day-one" if self.state["phase"] in ("new", "browsing") else "day-two")
         if existing:
             saved_target = existing.get("target_id", existing.get("thread_id"))
             saved_kind = existing.get("target_kind", "session")
-            if saved_target != target_id or saved_kind != target_kind or existing["local_time"] != local_time or existing["timezone"] != self.config["timezone"]:
-                raise WorkflowError("A schedule record already exists; inspect and update that automation instead of creating another")
-            return existing
+            if existing.get("step", "day-two") == step:
+                if (saved_target != target_id or saved_kind != target_kind
+                        or (local_time is not None and existing["local_time"] != local_time)
+                        or (run_at is not None and self.schedule_time(run_at).astimezone(timezone.utc) != self.schedule_time(existing["first_run_at"]).astimezone(timezone.utc))
+                        or existing["timezone"] != self.config["timezone"]):
+                    raise WorkflowError("A schedule record already exists; reconcile that task instead of creating another")
+                return existing
+            if existing.get("step", "day-two") != "day-one" or step != "day-two" or existing["status"] != "removed":
+                raise WorkflowError("Remove the finished Day 1 task before preparing Day 2")
         zone = ZoneInfo(self.config["timezone"])
-        first_date = self.state.get("day_two_date") or (now().astimezone(zone).date() + timedelta(days=1)).isoformat()
-        target = datetime.fromisoformat(first_date + "T" + local_time).replace(tzinfo=zone, fold=0)
+        current = now()
+        if step == "day-one":
+            if self.state["phase"] not in ("new", "browsing"):
+                raise WorkflowError("Day 1 is already finished")
+            if run_at is not None:
+                target = self.schedule_time(run_at)
+            elif local_time is None:
+                target = (current + timedelta(minutes=5)).astimezone(zone)
+            else:
+                target = datetime.fromisoformat(current.astimezone(zone).date().isoformat() + "T" + local_time).replace(tzinfo=zone, fold=0)
+                if target.astimezone(timezone.utc) <= current:
+                    target += timedelta(days=1)
+        else:
+            due = self.state.get("day_two_date")
+            if self.state["phase"] not in ("waiting_day_two", "signup") or not due:
+                raise WorkflowError("Finish Day 1 before scheduling Day 2")
+            if run_at is not None:
+                target = self.schedule_time(run_at)
+            else:
+                explicit_clock_time = local_time is not None
+                local_time = local_time or "09:00"
+                first_date = max(due, current.astimezone(zone).date().isoformat())
+                target = datetime.fromisoformat(first_date + "T" + local_time).replace(tzinfo=zone, fold=0)
+                if target.astimezone(timezone.utc) <= current:
+                    target = target + timedelta(days=1) if explicit_clock_time else (current + timedelta(minutes=5)).astimezone(zone)
+            if target.date().isoformat() < due:
+                raise WorkflowError("Day 2 cannot be scheduled before its eligible local date")
         if target.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None) != target.replace(tzinfo=None):
             raise WorkflowError("Selected local time does not exist on that date; choose another time")
-        # A late manual resume can target today, but never authorizes a second schedule.
+        if target.astimezone(timezone.utc) <= current:
+            raise WorkflowError("Execution time must be in the future")
         schedule = dict(intent_id=uuid.uuid4().hex, automation_id=None, target_id=target_id, target_kind=target_kind,
-                        local_time=local_time, timezone=self.config["timezone"], first_run_at=target.isoformat(),
+                        step=step, local_time=target.strftime("%H:%M"), timezone=self.config["timezone"], first_run_at=target.isoformat(),
                         status="create_pending", pending_action="create", created_at=stamp(), updated_at=stamp())
+        if existing:
+            self.state.setdefault("schedule_history", []).append(existing.copy())
         self.state["schedule"] = schedule
         self.save()
         return schedule
 
-    def schedule_record(self, intent_id, automation_id):
+    def schedule_record(self, intent_id, automation_id, run_at=None):
         schedule = self.state.get("schedule")
         if not schedule or schedule["intent_id"] != intent_id or not automation_id.strip():
             raise WorkflowError("Matching schedule intent and actual returned automation ID are required")
+        if "step" in schedule:
+            if run_at is None:
+                raise WorkflowError("Supply the scheduler's verified execution time")
+            timing_matches = self.schedule_time(run_at).astimezone(timezone.utc) == self.schedule_time(schedule["first_run_at"]).astimezone(timezone.utc)
+        else:
+            timing_matches = True
         if schedule["automation_id"]:
             if schedule["automation_id"] != automation_id:
                 raise WorkflowError("Never overwrite the existing automation ID with another schedule")
-            return schedule
-        if schedule["status"] not in ("create_pending", "uncertain") or schedule["pending_action"] != "create":
+            if schedule["status"] != "timing_mismatch":
+                return schedule
+        elif schedule["status"] not in ("create_pending", "uncertain") or schedule["pending_action"] != "create":
             raise WorkflowError("No unresolved schedule creation to record")
-        cleanup = self.state["phase"] == "complete"
-        schedule.update(automation_id=automation_id, status="removal_pending" if cleanup else "active",
+        cleanup = self.schedule_finished()
+        schedule.update(automation_id=automation_id, status="removal_pending" if cleanup else "active" if timing_matches else "timing_mismatch",
                         pending_action="remove" if cleanup else None, updated_at=stamp())
+        if run_at is not None:
+            schedule["confirmed_run_at"] = self.schedule_time(run_at).isoformat()
         self.save()
         return schedule
 
@@ -455,8 +528,8 @@ class Account:
             raise WorkflowError("Use only this account's recorded automation ID")
         if action not in ("pause", "resume", "remove"):
             raise WorkflowError("Unsupported scheduler action")
-        if self.state["phase"] == "complete" and action != "remove":
-            raise WorkflowError("Only schedule removal is allowed after workflow completion")
+        if self.schedule_finished() and action != "remove":
+            raise WorkflowError("Only schedule removal is allowed after this step finishes")
         if schedule["status"] == "removed":
             if action == "remove": return schedule
             raise WorkflowError("A removed schedule cannot be resumed or paused")
@@ -491,7 +564,7 @@ class Account:
             raise WorkflowError("No matching unresolved schedule creation")
         if schedule["pending_action"] != "create" or outcome not in ("uncertain", "confirmed_absent"):
             raise WorkflowError("Invalid schedule creation reconciliation")
-        if outcome == "confirmed_absent" and self.state["phase"] == "complete":
+        if outcome == "confirmed_absent" and self.schedule_finished():
             schedule.update(status="removed", pending_action=None)
         else:
             schedule.update(status="uncertain" if outcome == "uncertain" else "create_pending", pending_action="create")
@@ -557,7 +630,12 @@ def main():
         if name == "schedule-prepare":
             q.add_argument("--target-id", "--thread-id", dest="target_id", required=True)
             q.add_argument("--target-kind", choices=("session", "runner"), default="session")
-            q.add_argument("--local-time", required=True)
+            timing = q.add_mutually_exclusive_group()
+            timing.add_argument("--local-time")
+            timing.add_argument("--run-at", help="ISO execution time with explicit UTC offset")
+            q.add_argument("--step", choices=("day-one", "day-two"))
+        if name == "schedule-record":
+            q.add_argument("--run-at", help="Verified execution time returned by the scheduler")
         if name in ("schedule-record", "schedule-creation-result"):
             q.add_argument("--intent-id", required=True)
         if name in ("schedule-record", "schedule-action", "schedule-result"):
@@ -591,8 +669,8 @@ def main():
                 elif name == "signup-complete": result = account.complete(args.evidence)
                 elif name == "reserve-sms": result = account.reserve_sms(args.amount, args.service, args.kind)
                 elif name == "sms-result": result = account.sms_result(args.entry_id, args.status, args.provider_id)
-                elif name == "schedule-prepare": result = account.schedule_prepare(args.target_id, args.local_time, args.target_kind)
-                elif name == "schedule-record": result = account.schedule_record(args.intent_id, args.automation_id)
+                elif name == "schedule-prepare": result = account.schedule_prepare(args.target_id, args.local_time, args.target_kind, args.step, args.run_at)
+                elif name == "schedule-record": result = account.schedule_record(args.intent_id, args.automation_id, args.run_at)
                 elif name == "schedule-action": result = account.schedule_action(args.action, args.automation_id)
                 elif name == "schedule-result": result = account.schedule_result(args.action, args.automation_id, args.outcome)
                 elif name == "schedule-creation-result": result = account.schedule_creation_result(args.intent_id, args.outcome)

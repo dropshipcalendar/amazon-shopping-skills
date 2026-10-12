@@ -282,9 +282,24 @@ class WorkflowTests(unittest.TestCase):
     def test_calendar_gate_not_24_hour_delay(self):
         self.time = datetime(2026, 10, 13, 6, 58, tzinfo=timezone.utc)  # Oct 12 23:58 PDT
         self.finish_day_one()  # completes Oct 13 00:03 PDT
-        self.assertEqual(self.a.state["day_two_date"], "2026-10-13")
+        self.assertEqual(self.a.state["day_two_date"], "2026-10-14")
+        with self.assertRaises(WorkflowError): self.a.signup_start()
+        self.time = datetime(2026, 10, 14, 7, 0, tzinfo=timezone.utc)
         self.a.signup_start()
         self.assertEqual(self.a.state["phase"], "signup")
+
+    def test_interrupted_day_one_uses_final_completion_date(self):
+        self.begin()
+        self.a.viewed("Desk lamp", "https://www.amazon.com/dp/TEST")
+        self.time += timedelta(seconds=100)
+        self.a.browse_stop("interrupted")
+        self.assertIsNone(self.a.state["day_two_date"])
+        self.time += timedelta(days=2)
+        self.a.browse_start()
+        self.time += timedelta(seconds=200)
+        self.a.browse_stop("completed")
+        self.assertEqual(self.a.state["day_two_date"], "2026-10-15")
+        self.assertEqual(self.a.state["day_one_completed_at"], self.time.isoformat())
 
     def test_same_day_signup_rejected_after_browsing(self):
         self.finish_day_one()

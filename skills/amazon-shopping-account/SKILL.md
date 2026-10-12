@@ -1,27 +1,35 @@
 ---
 name: amazon-shopping-account
-description: "Set up or resume one Amazon shopping account across two days: browse allowlisted products signed out on Day 1, then register on Day 2 using a dedicated Chrome profile, AgentMail, and optional one-time TextVerified SMS. Supports scheduled continuation when available. Excludes Seller Central, AWS, purchases, and account recovery."
+description: "Install, set up, and schedule one Amazon shopping account workflow: five minutes of allowlisted browsing on Day 1, then registration on Day 2 using a dedicated Chrome profile, AgentMail, and optional one-time TextVerified SMS. Excludes Seller Central, AWS, purchases, and account recovery."
 ---
 
 # Amazon shopping account
 
+## Default: set up and run both days
+
+When asked to install and use or follow this skill, complete setup and arrange the full two-day workflow in the same invocation. Do not stop at "installed" or "setup complete," and do not ask whether to start when that request already authorizes both days.
+
+Unless the user requests another time, schedule Day 1 for five minutes after setup finishes. After Day 1 actually completes, schedule Day 2 for 09:00 on the following local calendar day. Follow [scheduling](references/scheduling.md): verify the runner, save confirmed task IDs/times, remove finished tasks, and reuse existing tasks on retries. Never claim a planned task is confirmed.
+
+Explicit setup-only, no-scheduling, pause, or cancellation instructions override this default. Downloading, inspecting, editing, and testing files execute neither setup nor the workflow. On later invocations, resume saved progress and authorization; do not provision again. If automatic execution is unavailable, state that and give the manual next action.
+
+Keep messages brief. Start full setup with: "I'll prepare the browser and connections, then schedule browsing and next-day registration. I'll ask if your input is needed." Report only blockers, required user actions, or milestones. Keep internal checks and unrelated installer-target warnings out of replies.
+
+After setup and confirmed Day 1 scheduling, say: "Setup complete. This skill browses selected products for five minutes, then creates your Amazon shopping account the following day. Day 1 is scheduled for [date/time/timezone]; registration is planned for 09:00 the day after browsing completes. I'll contact you if your input is needed." Use the user's timing override when supplied. After Day 1, report the confirmed Day 2 date/time. Do not include routine balances, prices, or credential-store details unless action is needed.
+
 ## Start or resume
-
-When asked to install and follow this skill, perform initial setup in the same turn. On later invocations, reuse saved setup and resume the requested work. Requests limited to downloading, inspecting, or editing files do not execute setup. Start the two-day workflow only when requested.
-
-Keep user messages brief. Start setup with: "I'll prepare the browser and connect email and SMS access. I'll ask you to step in only if a login is needed." Continue working; report only a blocker, required user action, or completion. Keep internal checks and unrelated installer-target warnings out of the reply. Reuse existing authorization rather than asking again.
 
 Use the complete local skill folder and the current computer's browser, terminal, and file tools. The helpers support Windows, macOS, and Linux. Keep both days on the same computer with persistent account data and browser profile.
 
 1. Follow [initial setup](references/setup.md) for runtime preparation, saved access, and provider connections. Use [configuration](references/configuration.md) only for defaults or overrides.
 2. Inspect `workflow.py status ACCOUNT_ID`. If complete, perform only pending [schedule cleanup](references/scheduling.md).
 3. For browser work, follow [profile](references/browser-profile.md) and [interaction](references/browser-interaction.md) instructions.
-4. For a requested two-day run, select the saved phase below and use [scheduling](references/scheduling.md) for continuation.
+4. For the default two-day run, arrange or reconcile [scheduling](references/scheduling.md), then execute the saved phase only when its task is due. An explicit request to run now may proceed immediately.
 
 | Phase | Next step |
 |---|---|
-| `new` or `browsing` | [Day 1](references/day-one.md): 300 seconds of signed-out browsing using the bundled allowlist, adding at most two matching products, one each. |
-| `waiting_day_two` | If early, report the existing continuation and end this run. On or after the saved eligible date, follow Day 2. |
+| `new` or `browsing` | Schedule Day 1 after setup; when due, follow [Day 1](references/day-one.md): 300 active seconds of signed-out browsing, adding at most two matching products, one each. |
+| `waiting_day_two` | Clean up the Day 1 task and confirm Day 2 scheduling. If early, end this run; when the Day 2 task is due, follow Day 2. |
 | `signup` | [Day 2](references/day-two.md): register in the same profile using the assigned inbox. |
 | Email verification pending | [Email](references/email.md): retrieve only the current request's verification message. |
 | Phone requested | [Phone](references/phone.md): one-time SMS within saved spending and attempt limits. |
